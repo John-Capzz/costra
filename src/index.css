@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   COSTRA — Design System Tokens
+   Light mode (default) — warm brown + off-white palette
+   Dark mode  — near-black + warm brown accents
+   ============================================================ */
+
+:root {
+  /* Canvas */
+  --bg:            #f8f4ef;
+  --bg-alt:        #f2ece4;
+
+  /* Surfaces */
+  --surface:       rgba(255, 255, 255, 0.65);
+  --surface-strong:#ffffff;
+  --surface-muted: #ede8e1;
+
+  /* Ink */
+  --ink:           #1c1410;
+  --ink-2:         #2e2318;
+  --muted:         #6b5c4e;
+  --subtle:        #9c8a7b;
+  --faint:         #c4b4a6;
+
+  /* Borders */
+  --border:        rgba(100, 72, 48, 0.14);
+  --border-mid:    rgba(100, 72, 48, 0.26);
+  --border-strong: rgba(100, 72, 48, 0.50);
+
+  /* Accent — warm brown */
+  --accent:        #5a3520;
+  --accent-hover:  #3e200e;
+  --accent-soft:   #f0e6d8;
+  --accent-text:   #7a4830;
+
+  /* Semantic */
+  --success:       #217a4b;
+  --success-soft:  #e4f4ec;
+  --warning:       #9a6c10;
+  --warning-soft:  #fef3d8;
+  --danger:        #ba2b30;
+  --danger-soft:   #fde9e9;
+  --info:          #1a5fa0;
+  --info-soft:     #deeaf8;
+
+  /* Radii */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+  --radius-xl:  20px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(28,20,16,0.06);
+  --shadow-sm: 0 1px 4px rgba(28,20,16,0.08), 0 0 1px rgba(28,20,16,0.05);
+  --shadow:    0 3px 12px rgba(28,20,16,0.10), 0 1px 3px rgba(28,20,16,0.06);
+  --shadow-lg: 0 8px 32px rgba(28,20,16,0.14), 0 2px 8px rgba(28,20,16,0.08);
+
+  /* Sidebar */
+  --sidebar-bg:      #1e130a;
+  --sidebar-ink:     #e8dbd0;
+  --sidebar-muted:   #9c8070;
+  --sidebar-border:  rgba(255,255,255,0.07);
+  --sidebar-active:  rgba(255,255,255,0.10);
+  --sidebar-hover:   rgba(255,255,255,0.06);
+  --sidebar-accent:  #c89060;
+
+  /* Code */
+  --code-bg:  #1e140a;
+  --code-fg:  #e8dbd0;
+}
+
+/* ---- Dark mode overrides ---------------------------------- */
+.dark {
+  --bg:            #120d08;
+  --bg-alt:        #1a1208;
+
+  --surface:       rgba(255,255,255,0.06);
+  --surface-strong:#1e1510;
+  --surface-muted: #2a1e14;
+
+  --ink:           #f0e8e0;
+  --ink-2:         #d8ccc0;
+  --muted:         #9c8878;
+  --subtle:        #7a6858;
+  --faint:         #4a3c30;
+
+  --border:        rgba(255,255,255,0.09);
+  --border-mid:    rgba(255,255,255,0.15);
+  --border-strong: rgba(255,255,255,0.35);
+
+  --accent:        #c89060;
+  --accent-hover:  #d8a878;
+  --accent-soft:   rgba(200,144,96,0.15);
+  --accent-text:   #c89060;
+
+  --success:       #5ac880;
+  --success-soft:  rgba(90,200,128,0.12);
+  --warning:       #d4a030;
+  --warning-soft:  rgba(212,160,48,0.12);
+  --danger:        #e05858;
+  --danger-soft:   rgba(224,88,88,0.12);
+  --info:          #60a8e0;
+  --info-soft:     rgba(96,168,224,0.12);
+
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.4), 0 0 1px rgba(0,0,0,0.2);
+  --shadow:    0 3px 12px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.25);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35);
+
+  --sidebar-bg:     #0d0906;
+  --sidebar-ink:    #e8dbd0;
+  --sidebar-muted:  #7a6858;
+  --sidebar-border: rgba(255,255,255,0.07);
+  --sidebar-active: rgba(255,255,255,0.09);
+  --sidebar-hover:  rgba(255,255,255,0.05);
+  --sidebar-accent: #c89060;
+
+  --code-bg: #0d0906;
+  --code-fg: #e8dbd0;
+}
+
+/* ---- Base reset ------------------------------------------- */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: 'DM Sans', sans-serif;
+  background-color: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---- Typography utilities --------------------------------- */
+.display {
+  font-family: 'Space Grotesk', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.mono {
+  font-family: 'JetBrains Mono', 'Menlo', 'Monaco', monospace;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Scrollbar styling ------------------------------------ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--subtle); }
+
+/* ---- Focus ring ------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Toast overrides -------------------------------------- */
+[data-sonner-toaster] {
+  font-family: 'DM Sans', sans-serif !important;
+}
