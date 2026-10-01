@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.server.tsbuildinfo",
+    "lib": ["ES2020"],
+    "types": ["node"],
+    "jsx": "preserve",
+    "noEmit": true
+  },
+  "include": ["server", "src/types", "src/lib"]
+}

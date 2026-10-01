@@ -1,105 +1,54 @@
-// ============================================================
-// COSTRA — Cost Engine
-// Modular, provider-agnostic cost estimation
-// ============================================================
-
-import type { CostItem, CostItemType, CostPlan } from '@/types'
+import type { CostItemType } from '@/types'
+import { Money } from './money'
+import type { ExactCostItem } from './cost-item'
 
 export interface CostEstimationInput {
-  agentId:     string
-  agentName:   string
-  task:        string
-  network:     string
-  currency:    string
-  maxBudget:   number
+  agentId: string
+  agentName: string
+  task: string
+  network: string
+  currency: string
+  maxBudget: string
 }
 
 export interface CostEstimationResult {
-  items:             CostItem[]
-  estimatedCost:     number
-  safetyBuffer:      number
-  recommendedBudget: number
-  confidence:        number
+  items: ExactCostItem[]
+  estimatedCost: string
+  safetyBuffer: string
+  recommendedBudget: string
+  confidence: string
 }
 
-// ---- Item factories (extend for real providers) -----------
-
-function makeItem(
-  id: string,
-  type: CostItemType,
-  label: string,
-  provider: string,
-  unitPrice: number,
-  quantity: number,
-  confidence: number,
-): CostItem {
-  return {
-    id,
-    type,
-    label,
-    provider,
-    unitPrice,
-    quantity,
-    estimated:  +(unitPrice * quantity).toFixed(6),
-    confidence,
-    source:     confidence > 0.85 ? 'historical' : confidence > 0.70 ? 'estimation' : 'static',
-  }
+function confidenceSource(confidence: string): ExactCostItem['source'] {
+  const value = Money.from(confidence)
+  return value.compare(Money.from('0.850000')) > 0 ? 'historical' : value.compare(Money.from('0.700000')) > 0 ? 'estimation' : 'static'
 }
 
-// ---- Default estimation profile ----------------------------
-// In production, these would come from a provider registry
-// and historical cost data.
+function makeItem(id: string, type: CostItemType, label: string, provider: string, unitPrice: string, quantity: string, confidence: string): ExactCostItem {
+  const estimated = Money.multiplyDecimal(unitPrice, quantity, 'half-up').toString()
+  return { id, type, label, provider, unitPrice, quantity, estimated, confidence, source: confidenceSource(confidence), currency: 'USDC' }
+}
 
 export function estimateCost(input: CostEstimationInput): CostEstimationResult {
-  const { task, network } = input
-
-  // Rough heuristics — real implementation would use provider
-  // catalogues and per-agent historical data.
-  const isChainTask   = /arc|ethereum|chain|protocol|defi|pool/i.test(task)
-  const isResearchTask = /research|analys|report|fetch|study/i.test(task)
-  const arcTxCount    = isChainTask ? 10 : 4
-
-  const items: CostItem[] = [
-    makeItem('ci_new_a', 'api_call',
-      'Data / API requests',  'DeFiLlama',    0.0018, 233, 0.90),
-    makeItem('ci_new_b', 'inference',
-      'Agent inference',      'OpenAI GPT-4',  0.0031, 100, 0.82),
-    makeItem('ci_new_c', 'arc_transaction',
-      'Arc transactions',     network || 'Arc', 0.006, arcTxCount, 0.95),
-    makeItem('ci_new_d', 'external_service',
-      'External services',    'Alchemy',       0.006,  30, 0.85),
-    makeItem('ci_new_e', 'retry_overhead',
-      'Expected retries',     'COSTRA',        isResearchTask ? 0.0045 : 0.008, 20, 0.75),
+  const isChainTask = /arc|ethereum|chain|protocol|defi|pool/i.test(input.task)
+  const isResearchTask = /research|analys|report|fetch|study/i.test(input.task)
+  const arcTxCount = isChainTask ? '10' : '4'
+  const items = [
+    makeItem('ci_new_a', 'api_call', 'Data / API requests', 'DeFiLlama', '0.0018', '233', '0.90'),
+    makeItem('ci_new_b', 'inference', 'Agent inference', 'OpenAI GPT-4', '0.0031', '100', '0.82'),
+    makeItem('ci_new_c', 'arc_transaction', 'Arc transactions', input.network || 'Arc Testnet', '0.006', arcTxCount, '0.95'),
+    makeItem('ci_new_d', 'external_service', 'External services', 'Alchemy', '0.006', '30', '0.85'),
+    makeItem('ci_new_e', 'retry_overhead', 'Expected retries', 'COSTRA', isResearchTask ? '0.0045' : '0.008', '20', '0.75'),
   ]
-
-  const estimatedCost     = +items.reduce((s, i) => s + i.estimated, 0).toFixed(4)
-  const meanConfidence    = items.reduce((s, i) => s + i.confidence, 0) / items.length
-  const safetyBuffer      = +(estimatedCost * (1 - meanConfidence + 0.12)).toFixed(4)
-  const recommendedBudget = +(estimatedCost + safetyBuffer).toFixed(4)
-
-  return { items, estimatedCost, safetyBuffer, recommendedBudget, confidence: +meanConfidence.toFixed(3) }
-}
-
-// ---- Plan constructor -------------------------------------
-
-export function buildCostPlan(
-  input: CostEstimationInput,
-  estimation: CostEstimationResult,
-  planId: string,
-): Omit<CostPlan, 'createdAt' | 'updatedAt'> {
+  const estimated = Money.sum(items.map((item) => Money.from(item.estimated)))
+  const meanConfidence = Money.sum(items.map((item) => Money.from(item.confidence))).divideInteger(items.length, 'half-up')
+  const safetyFactor = Money.from('1.000000').subtract(meanConfidence).add(Money.from('0.120000'))
+  const safetyBuffer = estimated.multiply(safetyFactor.toString(), 'half-up')
   return {
-    id:                planId,
-    taskDescription:   input.task,
-    agentId:           input.agentId,
-    agentName:         input.agentName,
-    network:           input.network,
-    currency:          input.currency,
-    maxBudget:         input.maxBudget,
-    estimatedCost:     estimation.estimatedCost,
-    safetyBuffer:      estimation.safetyBuffer,
-    recommendedBudget: estimation.recommendedBudget,
-    confidence:        estimation.confidence,
-    status:            'draft',
-    items:             estimation.items,
+    items,
+    estimatedCost: estimated.toString(),
+    safetyBuffer: safetyBuffer.toString(),
+    recommendedBudget: estimated.add(safetyBuffer).toString(),
+    confidence: meanConfidence.toString(),
   }
 }

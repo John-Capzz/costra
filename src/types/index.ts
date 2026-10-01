@@ -32,16 +32,16 @@ export type BudgetState = 'within' | 'approaching' | 'blocked' | 'completed'
 
 export interface BudgetPolicy {
   type:  'per_task' | 'per_transaction' | 'daily' | 'agent' | 'service'
-  limit: number
+  limit: string | number
 }
 
 export interface BudgetCheckResult {
   allowed:       boolean
   reason?:       string
-  current:       number
-  proposedSpend: number
-  limit:         number
-  remaining:     number
+  current:       string
+  proposedSpend: string
+  limit:         string
+  remaining:     string
 }
 
 // ---- Cost Plan --------------------------------------------
@@ -70,10 +70,23 @@ export interface CostPlan {
 
 export type TaskStatus = 'pending' | 'executing' | 'completed' | 'failed' | 'blocked'
 
+export type TaskLifecycleStatus =
+  | 'planned'
+  | 'budgeted'
+  | 'executing'
+  | 'tracked'
+  | 'reconciled'
+  | 'failed'
+  | 'blocked'
+
 export type TaskEventType =
   | 'TASK_CREATED'
   | 'PLAN_GENERATED'
   | 'BUDGET_APPROVED'
+  | 'TASK_BUDGETED'
+  | 'TASK_EXECUTING'
+  | 'TASK_TRACKED'
+  | 'TASK_RECONCILED'
   | 'API_CALL'
   | 'SERVICE_PAYMENT'
   | 'ARC_TRANSACTION'
@@ -86,11 +99,12 @@ export interface TaskEvent {
   id:          string
   type:        TaskEventType
   timestamp:   string
-  cost?:       number
+  cost?:       string | number
   description?: string
   provider?:   string
   txHash?:     string
   metadata?:   Record<string, unknown>
+  executionMode?: 'simulated' | 'observed' | 'real'
 }
 
 export type SpendingMode = 'observe' | 'guarded'
@@ -103,6 +117,7 @@ export interface Task {
   network:       string
   currency:      string
   status:        TaskStatus
+  lifecycleStatus: TaskLifecycleStatus
   budget:        number
   estimated:     number
   currentSpend:  number

@@ -41,7 +41,9 @@ Define spending limits:
 ### EXECUTE (Observe or Guarded)
 Two enforcement modes:
 - **Observe**: track but don't block
-- **Guarded**: check before each spend; block if over limit
+- **Guarded**: checks before each spend and blocks when the payment path is the supported COSTRA-controlled Arc Testnet path; it does not control arbitrary external wallets
+
+Current capability status: Observe remains suitable for externally executed spending. Guarded execution is available only through the authenticated, owned, explicitly configured Arc Testnet API path. COSTRA does not block arbitrary external-wallet transactions.
 
 ### TRACK
 Real-time task economics:

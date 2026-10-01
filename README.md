@@ -4,7 +4,7 @@
 
 COSTRA helps autonomous agents estimate, budget, track, and reconcile the total economic cost of completing a task — before and during execution.
 
-> This initial application scaffold was created using [Arc Studio](https://studio.arc.io) and is intended for continued engineering, security hardening, and production deployment. The core architecture, visual system, API foundation, and SDK are production-ready starting points, not a final product.
+> This initial application scaffold was created using [Arc Studio](https://studio.arc.io). COSTRA is under active engineering and security hardening; several persistence, wallet, and enforcement capabilities remain simulated or deferred.
 
 ---
 
@@ -27,7 +27,7 @@ PLAN → BUDGET → EXECUTE → TRACK → RECONCILE
 
 1. **Plan** — generate a cost estimate broken down by inference, API calls, blockchain transactions, retries, and service fees
 2. **Budget** — define spending limits at task, transaction, daily, and agent level
-3. **Execute** — the agent runs; COSTRA tracks every spend event
+3. **Execute** — the agent runs; COSTRA tracks every spend event, with budget enforcement available only on the COSTRA-controlled execution path
 4. **Track** — real-time budget state (within / approaching / blocked)
 5. **Reconcile** — compare planned vs actual; build cost prediction history
 
@@ -44,7 +44,7 @@ costra/
 │   ├── hooks/            React hooks (useTheme)
 │   └── types/            Shared TypeScript domain types
 ├── server/               REST API (Express + TypeScript)
-│   ├── routes/           plans, tasks, agents, spending, budget
+│   ├── routes/           plans, tasks, agents, spending, budget, executions
 │   └── middleware/       auth, rateLimit, error
 ├── sdk/                  @costra/sdk — programmatic client
 ├── db/                   PostgreSQL schema + migrations
@@ -57,13 +57,13 @@ See [`docs/architecture.md`](docs/architecture.md) for the full architecture dia
 
 ## Arc Integration
 
-COSTRA is Arc-first. Arc is Circle's blockchain where **USDC is the native gas token**, giving extremely predictable transaction costs.
+COSTRA is Arc-first. Arc Testnet is the only active supported development network. Arc is Circle's blockchain where **USDC is the native gas token**, giving predictable transaction-cost estimates.
 
 Key integration points:
-- `ArcAdapter` in `src/lib/arc-adapter.ts` — chain adapter for transaction cost estimation, balance lookup, and transaction tracking
-- Extend with `registerAdapter(key, adapter)` to add more chains without touching core logic
-- Arc Testnet Chain ID: `5042002`; Mainnet: `5042`
-- Gas is USDC — no ETH required for Arc transactions
+- `ArcAdapter` in `src/lib/arc-adapter.ts` — Arc Testnet estimation plus an explicitly configured controlled USDC execution boundary
+- Arc Testnet Chain ID: `5042002`
+- Controlled submission and receipt tracking require explicit Arc Testnet RPC/private-key configuration; ordinary tests never submit live transactions
+- Live USDC balance reads and arbitrary external-wallet control are not provided
 
 ---
 
@@ -84,6 +84,15 @@ Authentication: `Authorization: Bearer <api_key>`
 | GET  | `/agents` | List agents |
 | GET  | `/spending` | Query spending history |
 | POST | `/budget/check` | Check a spend against budget |
+| POST | `/executions` | Submit an explicit controlled Arc Testnet USDC execution |
+| GET  | `/executions/:id` | Fetch an owned execution request |
+| POST | `/executions/:id/track` | Fetch and persist the Arc receipt for an owned execution |
+| GET  | `/tasks/:id/transactions` | List owned task transactions |
+| GET  | `/plans/:id/reconciliation` | Fetch an owned plan reconciliation |
+| GET  | `/api-keys` | List owned API-key metadata (never hashes) |
+| POST | `/api-keys` | Create an API key; plaintext is returned once |
+| POST | `/api-keys/:id/revoke` | Revoke an owned API key |
+| POST | `/api-keys/:id/rotate` | Atomically revoke and replace an owned API key |
 
 ---
 
@@ -136,14 +145,30 @@ cp .env.example .env
 # Edit .env with your DB credentials
 
 # Run DB migrations
-psql $DATABASE_URL -f db/schema.sql
+bun run db:migrate
 
 # Start frontend (port 5173)
 bun run dev
 
-# Start API server (port 3001)
+# Start API server (port 3001; use `bun server/index.ts` if the local Node/tsx runtime hits its Windows passwd error)
 bun run server
 ```
+
+### Provision a demo user
+
+Browser login requires a persisted user with a scrypt password verifier. The
+operator-only seed command reads credentials from the current environment and
+never writes them to the repository, logs, or frontend configuration:
+
+```powershell
+$env:DEMO_USER_EMAIL = 'demo@example.test'
+$env:DEMO_USER_PASSWORD = (Read-Host 'Demo password' -AsSecureString | ConvertFrom-SecureString -AsPlainText)
+$env:DEMO_USER_NAME = 'COSTRA Demo Operator'
+bun run db:seed-demo-user
+```
+
+The command is disabled when `COSTRA_ENV=production`. Use a secret-managed
+environment for staging and clear the variables after provisioning.
 
 ### Environment Variables
 
@@ -153,6 +178,8 @@ bun run server
 | `COSTRA_API_KEY` | Admin API key for local dev |
 | `CORS_ORIGIN` | Allowed CORS origin (default: http://localhost:5173) |
 | `PORT` | API server port (default: 3001) |
+
+Browser dashboard authentication uses a PostgreSQL-backed session cookie. Seed a user with a scrypt password verifier through a controlled staging/operations procedure; do not place passwords or API keys in `VITE_*` configuration. SDK and server-to-server clients continue to use API keys.
 
 ---
 
@@ -176,10 +203,9 @@ bun run lint
 See [`docs/roadmap.md`](docs/roadmap.md) for the full roadmap.
 
 Key upcoming capabilities:
-- PostgreSQL persistence replacing in-memory stores
 - Agent wallet integration (Circle developer-controlled wallets)
 - Historical cost prediction from reconciliation data
 - Provider comparison and dynamic estimation
-- COSTRA policy smart contract (escrow + enforcement)
-- Multi-chain support (Ethereum, Base, Arbitrum)
+- COSTRA policy smart contract (escrow + broader enforcement)
+- Additional networks only after concrete adapters exist
 - Webhook delivery for budget events

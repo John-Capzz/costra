@@ -2,13 +2,16 @@
 // COSTRA — Cost Plans list (/plans)
 // ============================================================
 
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, ArrowRight } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { DEMO_PLANS } from '@/lib/demo-data'
+import { costraApi, type CostPlanApiRecord } from '@/lib/api-client'
 import { formatUsd, formatDate } from '@/lib/utils'
 import type { CostPlanStatus } from '@/types'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 const STATUS_VARIANT: Record<CostPlanStatus, 'success' | 'info' | 'muted' | 'warning'> = {
   completed: 'success',
@@ -19,6 +22,16 @@ const STATUS_VARIANT: Record<CostPlanStatus, 'success' | 'info' | 'muted' | 'war
 
 export default function Plans() {
   const navigate = useNavigate()
+  const [plans, setPlans] = useState<CostPlanApiRecord[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void costraApi.plans
+      .then((result) => { if (active) setPlans(result.plans) })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Plans could not be loaded.') })
+    return () => { active = false }
+  }, [])
 
   return (
     <div className="max-w-4xl mx-auto px-5 py-7">
@@ -40,8 +53,11 @@ export default function Plans() {
         </button>
       </div>
 
+      {error && <Card padding="md" className="mb-5"><p className="text-sm text-[var(--danger)]">{error}</p><p className="text-xs text-[var(--muted)] mt-1">Configure the authenticated COSTRA API to load persisted plans.</p></Card>}
+      {!plans && !error && <LoadingSpinner className="mx-auto my-16" />}
+      {plans && plans.length === 0 && <EmptyState title="No cost plans yet" description="Create a plan to begin estimating task economics." />}
       <div className="space-y-3">
-        {DEMO_PLANS.map((plan) => (
+        {plans?.map((plan) => (
           <Card
             key={plan.id}
             padding="none"
@@ -56,18 +72,18 @@ export default function Plans() {
                   <span className="text-[10px] text-[var(--muted)]">{plan.network} · {plan.currency}</span>
                 </div>
                 <p className="text-[14px] font-semibold text-[var(--ink)] truncate">{plan.taskDescription}</p>
-                <p className="text-[12px] text-[var(--muted)] mt-0.5">{plan.agentName} · {formatDate(plan.createdAt)}</p>
+                <p className="text-[12px] text-[var(--muted)] mt-0.5">Agent {plan.agentId} · {formatDate(plan.createdAt)}</p>
               </div>
 
               {/* Figures */}
               <div className="flex items-center gap-6 flex-shrink-0">
                 <div className="text-center">
                   <p className="text-[10px] text-[var(--muted)] uppercase tracking-wider mb-0.5">Estimated</p>
-                  <p className="text-[14px] font-semibold tabular text-[var(--ink)]">{formatUsd(plan.estimatedCost)}</p>
+                  <p className="text-[14px] font-semibold tabular text-[var(--ink)]">{formatUsd(plan.estimatedCost ?? '0.000000')}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-[10px] text-[var(--muted)] uppercase tracking-wider mb-0.5">Recommended</p>
-                  <p className="text-[14px] font-semibold tabular text-[var(--ink)]">{formatUsd(plan.recommendedBudget)}</p>
+                  <p className="text-[14px] font-semibold tabular text-[var(--ink)]">{formatUsd(plan.recommendedBudget ?? '0.000000')}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-[10px] text-[var(--muted)] uppercase tracking-wider mb-0.5">Max Budget</p>
@@ -86,7 +102,7 @@ export default function Plans() {
             >
               <div
                 className="h-full rounded-full"
-                style={{ width: `${plan.confidence * 100}%`, background: 'var(--success)' }}
+                style={{ width: `${Number(plan.confidence ?? 0) * 100}%`, background: 'var(--success)' }}
               />
             </div>
           </Card>

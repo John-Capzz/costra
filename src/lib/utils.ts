@@ -9,9 +9,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Format a number as USD with 2 decimal places, e.g. $1.06 */
-export function formatUsd(value: number, decimals = 2): string {
-  return `$${value.toFixed(decimals)}`
+/** Format an exact decimal or legacy display number without using money arithmetic in the UI. */
+export function formatUsd(value: string | number, decimals = 2): string {
+  const text = typeof value === 'number' ? value.toFixed(6) : value
+  const negative = text.startsWith('-')
+  const unsigned = negative ? text.slice(1) : text
+  const [whole, fraction = ''] = unsigned.split('.')
+  const shown = fraction.padEnd(decimals, '0').slice(0, decimals)
+  return `${negative ? '-' : ''}$${whole}.${shown}`
 }
 
 /** Format a percent value, e.g. +11.32% */

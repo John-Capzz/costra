@@ -3,7 +3,7 @@
 // Custom-designed, not a generic SaaS template
 // ============================================================
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { DolphinLogo } from '@/components/ui/DolphinLogo'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
 
 const NAV_ITEMS = [
   { to: '/dashboard',   label: 'Overview',    icon: LayoutDashboard },
@@ -74,6 +75,7 @@ function SidebarItem({
 // ---- Sidebar ----------------------------------------------
 
 export function Sidebar() {
+  const { user, logout } = useAuth()
   return (
     <nav
       className="hidden lg:flex flex-col w-52 flex-shrink-0 sticky top-0 h-screen overflow-y-auto"
@@ -126,12 +128,11 @@ export function Sidebar() {
           <SidebarItem key={to} to={to} label={label} Icon={Icon} />
         ))}
       </div>
-
-      {/* Demo badge */}
-      <div className="mx-3 mb-4 px-3 py-2 rounded-[8px]" style={{ background: 'rgba(200,144,96,0.10)', border: '1px solid rgba(200,144,96,0.18)' }}>
-        <p className="text-[10px] font-semibold" style={{ color: 'var(--sidebar-accent)' }}>DEMO MODE</p>
-        <p className="text-[10px] mt-0.5" style={{ color: 'var(--sidebar-muted)' }}>Displaying sample data</p>
+      <div className="px-4 pb-4" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
+        <p className="pt-3 truncate text-[11px]" style={{ color: 'var(--sidebar-muted)' }}>{user?.email}</p>
+        <button onClick={() => void logout()} className="mt-2 text-[12px]" style={{ color: 'var(--sidebar-muted)' }}>Sign out</button>
       </div>
+
     </nav>
   )
 }
@@ -139,10 +140,22 @@ export function Sidebar() {
 // ---- Mobile nav -------------------------------------------
 
 export function MobileNav() {
+  const { logout } = useAuth()
   const [open, setOpen] = useState(false)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
   const location = useLocation()
   const allItems = [...NAV_ITEMS, ...NAV_BOTTOM]
   const currentItem = allItems.find((i) => location.pathname.startsWith(i.to))
+
+  useEffect(() => {
+    if (!open) return
+    closeButtonRef.current?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open])
 
   return (
     <header
@@ -181,6 +194,9 @@ export function MobileNav() {
             <motion.div
               className="fixed top-0 right-0 bottom-0 w-64 z-50 flex flex-col overflow-y-auto"
               style={{ background: 'var(--sidebar-bg)', borderLeft: '1px solid var(--sidebar-border)' }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="COSTRA navigation"
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -190,6 +206,7 @@ export function MobileNav() {
               <div className="flex items-center justify-between px-4 pt-4 pb-5">
                 <DolphinLogo dark size="sm" />
                 <button
+                  ref={closeButtonRef}
                   onClick={() => setOpen(false)}
                   className="p-1.5 rounded-[6px]"
                   style={{ color: 'var(--sidebar-muted)' }}
@@ -246,6 +263,7 @@ export function MobileNav() {
                   </NavLink>
                 ))}
               </div>
+              <button onClick={() => void logout()} className="mx-4 mb-5 text-left text-[12px]" style={{ color: 'var(--sidebar-muted)' }}>Sign out</button>
             </motion.div>
           </>
         )}

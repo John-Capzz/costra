@@ -2,21 +2,20 @@
 // COSTRA — Agent Detail (/agents/:id)
 // ============================================================
 
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Shield, Eye, Activity } from 'lucide-react'
-import {
-  RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer,
-} from 'recharts'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { BudgetBar } from '@/components/ui/BudgetBar'
 import { EventTimeline } from '@/components/ui/EventTimeline'
-import { DEMO_AGENTS, DEMO_TASKS } from '@/lib/demo-data'
+import { costraApi, type AgentApiRecord, type TaskApiRecord } from '@/lib/api-client'
 import { deriveBudgetState } from '@/lib/budget-engine'
 import { formatUsd, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import type { AgentStatus, TaskStatus, BudgetPolicy } from '@/types'
+import type { AgentStatus, TaskEventType, TaskStatus } from '@/types'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
 const STATUS_VARIANT: Record<AgentStatus, 'success' | 'muted' | 'warning' | 'danger'> = {
   active: 'success', idle: 'muted', paused: 'warning', error: 'danger',
@@ -25,24 +24,35 @@ const TASK_STATUS_VARIANT: Record<TaskStatus, 'success' | 'info' | 'danger' | 'w
   completed: 'success', executing: 'info', failed: 'danger', blocked: 'danger', pending: 'muted',
 }
 
-const POLICY_LABELS: Record<BudgetPolicy['type'], string> = {
-  per_task:        'Per Task',
-  per_transaction: 'Per Transaction',
-  daily:           'Daily',
-  agent:           'Agent Total',
-  service:         'Per Service',
-}
-
 export default function AgentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const agent = DEMO_AGENTS.find((a) => a.id === id)
-  const agentTasks = DEMO_TASKS.filter((t) => t.agentId === id)
+  const [agent, setAgent] = useState<AgentApiRecord | null>(null)
+  const [tasks, setTasks] = useState<TaskApiRecord[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!id) return
+    let active = true
+    void costraApi.getAgent(id)
+      .then((result) => { if (active) setAgent(result) })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Agent could not be loaded.') })
+    void costraApi.getTasks()
+      .then((result) => { if (active) setTasks(result.tasks.filter((task) => task.agentId === id)) })
+      .catch(() => { if (active) setTasks([]) })
+    return () => { active = false }
+  }, [id])
+
+  const agentTasks = tasks ?? []
+
+  if (!agent && !error) {
+    return <LoadingSpinner className="mx-auto my-24" />
+  }
   if (!agent) {
     return (
       <div className="max-w-2xl mx-auto px-5 py-16 text-center">
-        <p className="text-[var(--muted)] text-[14px]">Agent not found.</p>
+        <p className="text-[var(--danger)] text-[14px]">{error ?? 'Agent not found.'}</p>
+        <p className="text-xs text-[var(--muted)] mt-2">Live agent data is unavailable. Authenticate the COSTRA API and retry.</p>
         <button onClick={() => { void navigate('/agents') }} className="mt-4 text-[12px] text-[var(--accent-text)]">
           ← Back to agents
         </button>
@@ -50,20 +60,21 @@ export default function AgentDetail() {
     )
   }
 
-  const budgetState = deriveBudgetState(agent.totalSpend, agent.budgetLimit)
+  const totalSpend = agent.totalSpend
+  const budgetLimit = agent.budgetLimit
+  const budgetState = deriveBudgetState(totalSpend, budgetLimit)
 
-  // Radar chart data — multi-dimensional agent health
-  const radarData = [
-    { metric: 'Accuracy',   value: agent.planningAccuracy },
-    { metric: 'Budget Use', value: Math.round((agent.totalSpend / agent.budgetLimit) * 100) },
-    { metric: 'Tasks',      value: Math.min(100, agentTasks.length * 25) },
-    { metric: 'Reliability',value: agentTasks.filter((t) => t.status !== 'failed').length / Math.max(agentTasks.length, 1) * 100 },
-    { metric: 'Efficiency', value: 85 },
-  ]
-
-  // All events across agent tasks (latest N)
+  // All persisted events across this agent's tasks (latest N)
   const allEvents = agentTasks
-    .flatMap((t) => t.events)
+    .flatMap((task) => (task.events ?? []).map((event) => ({
+      ...event,
+      type: event.type as TaskEventType,
+      cost: event.cost === null ? undefined : event.cost,
+      description: event.description ?? undefined,
+      provider: event.provider ?? undefined,
+      txHash: event.txHash ?? undefined,
+      metadata: event.metadata ?? undefined,
+    })))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 12)
 
@@ -91,13 +102,18 @@ export default function AgentDetail() {
               }}
             >
               {agent.spendingMode === 'guarded' ? <Shield size={10} /> : <Eye size={10} />}
-              {agent.spendingMode}
+              {agent.spendingMode === 'guarded' ? 'guarded · policy checks only' : 'observe'}
             </span>
           </div>
           <h1 className="display text-2xl font-700 text-[var(--ink)] tracking-tight" style={{ fontWeight: 700 }}>
             {agent.name}
           </h1>
           <p className="text-[13px] text-[var(--muted)] mt-1 max-w-2xl">{agent.description}</p>
+          {agent.spendingMode === 'guarded' && (
+            <p className="text-[11px] text-[var(--warning)] mt-1">
+              Guarded mode is not enforced for arbitrary external wallets yet.
+            </p>
+          )}
           <p className="text-[11px] text-[var(--muted)] mt-1">Since {formatDate(agent.createdAt)}</p>
         </div>
       </div>
@@ -105,10 +121,10 @@ export default function AgentDetail() {
       {/* Metric row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[
-          { label: 'Total Spend',  value: formatUsd(agent.totalSpend) },
-          { label: 'Budget Limit', value: formatUsd(agent.budgetLimit) },
-          { label: 'Active Tasks', value: agent.activeTasks },
-          { label: 'Accuracy',     value: `${agent.planningAccuracy}%` },
+          { label: 'Total Spend',  value: formatUsd(totalSpend) },
+          { label: 'Budget Limit', value: formatUsd(budgetLimit) },
+          { label: 'Active Tasks', value: '—' },
+          { label: 'Accuracy',     value: agent.planningAccuracy === null ? '—' : `${agent.planningAccuracy}%` },
         ].map(({ label, value }) => (
           <Card key={label} padding="sm" className="text-center">
             <p className="text-[9px] text-[var(--muted)] uppercase tracking-[0.1em] mb-1">{label}</p>
@@ -121,24 +137,13 @@ export default function AgentDetail() {
 
       {/* Budget bar */}
       <Card padding="md" className="mb-5">
-        <BudgetBar current={agent.totalSpend} max={agent.budgetLimit} state={budgetState} size="md" />
+        <BudgetBar current={totalSpend} max={budgetLimit} state={budgetState} size="md" />
       </Card>
 
       <div className="grid lg:grid-cols-2 gap-5 mb-5">
-        {/* Radar */}
         <Card padding="md">
           <h2 className="display text-[13px] font-semibold text-[var(--ink)] mb-3">Agent Health</h2>
-          <ResponsiveContainer width="100%" height={180}>
-            <RadarChart data={radarData}>
-              <PolarGrid stroke="var(--border)" />
-              <PolarAngleAxis dataKey="metric" tick={{ fontSize: 10, fill: 'var(--muted)' }} />
-              <Radar
-                dataKey="value" name={agent.name}
-                stroke="var(--accent-text)" fill="var(--accent-text)"
-                fillOpacity={0.15} strokeWidth={1.5}
-              />
-            </RadarChart>
-          </ResponsiveContainer>
+          <p className="text-[12px] text-[var(--muted)]">Historical health scoring is unavailable until persisted task and reconciliation analytics are exposed.</p>
         </Card>
 
         {/* Budget policies */}
@@ -150,14 +155,7 @@ export default function AgentDetail() {
             </div>
           </div>
           <div className="divide-y divide-[var(--border)]">
-            {agent.budgetPolicies.map((policy, i) => (
-              <div key={i} className="flex items-center justify-between px-4 py-3">
-                <span className="text-[12px] text-[var(--ink)]">{POLICY_LABELS[policy.type]}</span>
-                <span className="text-[13px] font-semibold tabular text-[var(--ink)]">
-                  {formatUsd(policy.limit)}
-                </span>
-              </div>
-            ))}
+            <p className="px-4 py-8 text-center text-[12px] text-[var(--muted)]">Policy details are not included in the current agent API response.</p>
           </div>
         </Card>
       </div>
@@ -166,6 +164,7 @@ export default function AgentDetail() {
       <Card padding="none" className="mb-5">
         <div className="px-5 pt-4 pb-3 border-b border-[var(--border)]">
           <h2 className="display text-[14px] font-semibold text-[var(--ink)]">Tasks</h2>
+          <p className="text-[10px] text-[var(--muted)] mt-0.5">Persisted tasks associated with this agent.</p>
         </div>
         <div className="divide-y divide-[var(--border)]">
           {agentTasks.map((task) => (

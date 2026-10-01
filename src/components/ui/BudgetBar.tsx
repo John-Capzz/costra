@@ -3,7 +3,8 @@
 // ============================================================
 
 import { cn } from '@/lib/utils'
-import { formatUsd, clamp } from '@/lib/utils'
+import { formatUsd } from '@/lib/utils'
+import { Money } from '@/lib/money'
 import type { BudgetState } from '@/types'
 
 const STATE_COLOR: Record<BudgetState, string> = {
@@ -14,8 +15,8 @@ const STATE_COLOR: Record<BudgetState, string> = {
 }
 
 interface BudgetBarProps {
-  current:    number
-  max:        number
+  current:    string
+  max:        string
   state:      BudgetState
   size?:      'sm' | 'md'
   showLabel?: boolean
@@ -23,7 +24,8 @@ interface BudgetBarProps {
 }
 
 export function BudgetBar({ current, max, state, size = 'md', showLabel = true, className }: BudgetBarProps) {
-  const pct    = clamp((current / max) * 100, 0, 100)
+  const pctText = Money.percentOf(Money.from(current), Money.from(max), 2)
+  const pct = Math.max(0, Math.min(100, Number(pctText)))
   const color  = STATE_COLOR[state]
   const height = size === 'sm' ? 3 : 5
 

@@ -130,7 +130,7 @@ export default function Settings() {
         {/* Spending control */}
         <Section title="Spending Control" description="These settings apply globally as defaults. Per-task and per-agent overrides take precedence.">
           <Card padding="md">
-            <Row label="Block on limit" description="Prevent new spend events when the budget is exhausted.">
+            <Row label="Guarded policy checks" description="Evaluate limits before COSTRA-controlled requests; this does not block arbitrary external-wallet spending yet.">
               <Toggle checked={settings.blockOnLimit} onChange={() => toggle('blockOnLimit')} />
             </Row>
             <Row label="Observe mode" description="Track spending without enforcing limits. Suitable for external wallets.">
@@ -170,14 +170,8 @@ export default function Settings() {
         {/* API Key */}
         <Section title="API Access">
           <Card padding="md">
-            <Row label="API Key" description="Used by agents to authenticate with the COSTRA API.">
-              <button
-                className="px-3 py-1.5 rounded-[6px] text-[12px] font-semibold
-                  border border-[var(--border)] text-[var(--muted)] hover:text-[var(--ink)]
-                  hover:bg-[var(--surface-muted)] transition-colors"
-              >
-                Reveal / Rotate
-              </button>
+            <Row label="API key management" description="Create, list, revoke, and rotate keys through the authenticated API. Plaintext is returned only once at creation or rotation.">
+              <span className="text-[11px] text-[var(--muted)]">API only</span>
             </Row>
           </Card>
         </Section>

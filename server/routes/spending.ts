@@ -1,14 +1,24 @@
 import { Router } from 'express'
-import { DEMO_SPENDING_SERIES } from '../../src/lib/demo-data'
+import { getDefaultDatabasePool } from '../db/pool'
+import { asDatabaseUnavailable } from '../db/errors'
+import { requireAuthenticatedPrincipal } from '../auth/authorization'
+import { SpendingRepository } from '../repositories/spending'
+import type { DatabasePool } from '../repositories/types'
+import { validateSpendingQuery } from '../validation'
+import { Money } from '../../src/lib/money'
 
-export function createSpendingRouter() {
+function requireMoney(value: string): Money { return Money.from(value) }
+
+export function createSpendingRouter(db?: DatabasePool) {
   const router = Router()
-  router.get('/', (req, res) => {
-    const { from, to } = req.query
-    let series = DEMO_SPENDING_SERIES
-    if (from) series = series.filter((d) => d.date >= (from as string))
-    if (to)   series = series.filter((d) => d.date <= (to as string))
-    res.json({ series, total: series.reduce((s, d) => s + d.amount, 0) })
+  router.get('/', async (req, res, next) => {
+    try {
+      const principal = requireAuthenticatedPrincipal(req.principal)
+      const query = validateSpendingQuery(req.query)
+      const points = await new SpendingRepository(db ?? getDefaultDatabasePool()).listDailyForUser(principal.userId, query.from, query.to)
+      const total = points.reduce((sum, point) => sum.add(requireMoney(point.amount)), requireMoney('0'))
+      res.json({ series: points.map((point) => ({ date: point.date, amount: point.amount })), total: total.toString() })
+    } catch (error) { next(asDatabaseUnavailable(error)) }
   })
   return router
 }

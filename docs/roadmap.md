@@ -15,9 +15,9 @@
 
 ## V1.1 — Database & Persistence
 
-- [ ] PostgreSQL connection (Drizzle ORM or raw pg)
-- [ ] Migrations (db-migrate or Drizzle migrate)
-- [ ] Replace in-memory task store with DB
+- [x] PostgreSQL connection for API-key authentication (raw pg)
+- [x] Focused SQL migrations with transactional tracking and explicit baseline handling
+- [x] Persist plans, tasks, events, transactions, and reconciliations with ownership-scoped repositories
 - [ ] API key management UI (create, revoke, rotate)
 - [ ] User authentication (JWT + session)
 

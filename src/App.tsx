@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { Sidebar, MobileNav } from '@/components/layout/Navigation'
 import { useTheme } from '@/hooks/useTheme'
+import { useAuth } from '@/lib/auth'
+import Login from '@/pages/Login'
 
 // Pages
 import Dashboard   from '@/pages/Dashboard'
@@ -27,7 +29,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <MobileNav />
-        <main className="flex-1">
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-[var(--surface-strong)] focus:px-3 focus:py-2 focus:text-sm focus:text-[var(--ink)]">
+          Skip to main content
+        </a>
+        <main id="main-content" className="flex-1" tabIndex={-1}>
           {children}
         </main>
       </div>
@@ -38,6 +43,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 export default function App() {
   // Initialise theme on mount
   useTheme()
+  const { user, loading } = useAuth()
 
   // Google Fonts — Space Grotesk + DM Sans + JetBrains Mono
   useEffect(() => {
@@ -52,8 +58,9 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AppShell>
-        <Routes>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={loading ? <div className="min-h-screen" style={{ background: 'var(--bg)' }} /> : user ? <AppShell><Routes>
           <Route path="/"               element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"      element={<Dashboard />} />
           <Route path="/plans"          element={<Plans />} />
@@ -68,8 +75,8 @@ export default function App() {
           <Route path="/developer"      element={<Developer />} />
           <Route path="/settings"       element={<Settings />} />
           <Route path="*"               element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </AppShell>
+        </Routes></AppShell> : <Navigate to="/login" replace />} />
+      </Routes>
     </BrowserRouter>
   )
 }

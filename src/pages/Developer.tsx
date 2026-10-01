@@ -39,15 +39,20 @@ function CodeBlock({ code, language: _language = 'typescript' }: { code: string;
 }
 
 const REST_ENDPOINTS = [
+  { method: 'GET',  path: '/api/v1/plans',              desc: 'List owned cost plans' },
   { method: 'POST', path: '/api/v1/plans',              desc: 'Create a new cost plan' },
   { method: 'GET',  path: '/api/v1/plans/:id',          desc: 'Get a cost plan by ID' },
+  { method: 'GET',  path: '/api/v1/tasks',              desc: 'List owned tasks' },
   { method: 'POST', path: '/api/v1/tasks',              desc: 'Create a new task' },
   { method: 'GET',  path: '/api/v1/tasks/:id',          desc: 'Get a task by ID' },
   { method: 'POST', path: '/api/v1/tasks/:id/events',   desc: 'Append an event to a task' },
   { method: 'POST', path: '/api/v1/tasks/:id/reconcile','desc': 'Reconcile a completed task' },
   { method: 'GET',  path: '/api/v1/agents',             desc: 'List all agents' },
+  { method: 'GET',  path: '/api/v1/agents/:id',         desc: 'Get an owned agent' },
   { method: 'GET',  path: '/api/v1/spending',           desc: 'Query spending history' },
   { method: 'POST', path: '/api/v1/budget/check',       desc: 'Check a spend against a budget' },
+  { method: 'POST', path: '/api/v1/executions',          desc: 'Submit controlled Arc Testnet execution' },
+  { method: 'POST', path: '/api/v1/executions/:id/track', desc: 'Track a controlled execution receipt' },
 ]
 
 const METHOD_BADGE: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'muted'> = {
@@ -222,6 +227,9 @@ export default function Developer() {
               <h2 className="display text-sm font-semibold text-[var(--ink)]">Endpoints</h2>
               <p className="text-[12px] text-[var(--muted)] mt-0.5">
                 All requests require <span className="mono text-[11px]">Authorization: Bearer &lt;api_key&gt;</span>
+              </p>
+              <p className="text-[11px] text-[var(--warning)] mt-2">
+                Current network: Arc Testnet only. Arc/USDC transaction and balance behavior remains simulated; Guarded mode is not an arbitrary-wallet enforcement mechanism.
               </p>
             </div>
             <div className="divide-y divide-[var(--border)]">

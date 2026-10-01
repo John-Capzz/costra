@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { formatDateTime, formatUsd, truncateHash } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 import type { TaskEvent, TaskEventType } from '@/types'
+import { Money } from '@/lib/money'
 
 const EVENT_META: Record<TaskEventType, {
   label:   string
@@ -15,6 +16,10 @@ const EVENT_META: Record<TaskEventType, {
   TASK_CREATED:    { label: 'Created',    variant: 'muted',   dot: 'var(--faint)' },
   PLAN_GENERATED:  { label: 'Plan',       variant: 'accent',  dot: 'var(--accent-text)' },
   BUDGET_APPROVED: { label: 'Approved',   variant: 'success', dot: 'var(--success)' },
+  TASK_BUDGETED:   { label: 'Budgeted',   variant: 'success', dot: 'var(--success)' },
+  TASK_EXECUTING:  { label: 'Executing',  variant: 'info',    dot: 'var(--info)' },
+  TASK_TRACKED:    { label: 'Tracked',    variant: 'info',    dot: 'var(--info)' },
+  TASK_RECONCILED: { label: 'Reconciled', variant: 'success', dot: 'var(--success)' },
   API_CALL:        { label: 'API Call',   variant: 'info',    dot: 'var(--info)' },
   SERVICE_PAYMENT: { label: 'Payment',    variant: 'info',    dot: 'var(--info)' },
   ARC_TRANSACTION: { label: 'Arc Tx',     variant: 'accent',  dot: 'var(--accent-text)' },
@@ -68,7 +73,7 @@ export function EventTimeline({ events, className }: EventTimelineProps) {
                   <span className="text-[11px] text-[var(--muted)] tabular">
                     {formatDateTime(ev.timestamp)}
                   </span>
-                  {ev.cost !== undefined && ev.cost > 0 && (
+                  {ev.cost !== undefined && (typeof ev.cost === 'number' ? ev.cost > 0 : Money.from(ev.cost).compare(Money.zero()) > 0) && (
                     <span className="text-[11px] font-semibold tabular text-[var(--ink)]">
                       {formatUsd(ev.cost)}
                     </span>

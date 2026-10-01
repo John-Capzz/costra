@@ -1,0 +1,386 @@
+export interface ApiClientConfig {
+  baseUrl?: string
+  apiKey?: string
+  fetch?: typeof globalThis.fetch
+}
+
+export interface AuthUser { id: string; email: string | null; name: string | null }
+export interface AuthSessionResponse { user: AuthUser; expiresAt?: string; authMethod?: 'api_key' | 'browser_session' }
+
+export interface ApiErrorPayload {
+  error: string
+  message: string
+  requestId?: string
+}
+
+export class ApiClientError extends Error {
+  readonly status: number
+  readonly code: string
+  readonly requestId: string | null
+
+  constructor(input: { status: number; code: string; message: string; requestId?: string | null }) {
+    super(input.message)
+    this.name = 'ApiClientError'
+    this.status = input.status
+    this.code = input.code
+    this.requestId = input.requestId ?? null
+  }
+}
+
+export interface ApiClientRuntimeConfig {
+  baseUrl: string
+  apiKey?: string
+}
+
+export type ApiMoney = string
+
+const DEFAULT_API_BASE_URL = 'http://localhost:3001/api/v1'
+
+function trimBaseUrl(value: string): string {
+  return value.trim().replace(/\/$/, '')
+}
+
+export function getApiClientRuntimeConfig(
+  environment: Record<string, string | undefined> = (import.meta as ImportMeta & {
+    env?: Record<string, string | undefined>
+  }).env ?? {},
+): ApiClientRuntimeConfig {
+  const configuredBaseUrl = environment.VITE_COSTRA_API_BASE_URL
+  return { baseUrl: trimBaseUrl(configuredBaseUrl || DEFAULT_API_BASE_URL) }
+}
+
+export interface AgentApiRecord {
+  id: string
+  userId: string
+  name: string
+  description: string | null
+  status: 'active' | 'idle' | 'paused' | 'error'
+  spendingMode: 'observe' | 'guarded'
+  budgetLimit: ApiMoney
+  planningAccuracy: ApiMoney | null
+  totalSpend: ApiMoney
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CostPlanApiRecord {
+  id: string
+  agentId: string
+  taskDescription: string
+  network: 'Arc Testnet'
+  currency: 'USDC'
+  maxBudget: ApiMoney
+  estimatedCost: ApiMoney | null
+  safetyBuffer: ApiMoney | null
+  recommendedBudget: ApiMoney | null
+  confidence: ApiMoney | null
+  status: 'draft' | 'approved' | 'executing' | 'completed'
+  createdAt: string
+  updatedAt: string
+  items?: CostItemApiRecord[]
+}
+
+export interface CostItemApiRecord {
+  id: string
+  planId: string
+  type: string
+  label: string
+  providerId: string | null
+  provider?: string
+  unitPrice: ApiMoney
+  quantity: ApiMoney
+  estimated: ApiMoney
+  confidence: ApiMoney | null
+  source: 'static' | 'historical' | 'dynamic' | 'estimation'
+  createdAt: string
+}
+
+export interface TaskEventApiRecord {
+  id: string
+  taskId?: string
+  type: string
+  timestamp: string
+  cost: ApiMoney | null
+  currency?: 'USDC'
+  description: string | null
+  provider: string | null
+  txHash: string | null
+  metadata?: Record<string, unknown> | null
+  executionMode?: 'simulated' | 'observed' | 'real'
+}
+
+export interface TaskApiRecord {
+  id: string
+  agentId: string
+  planId: string | null
+  description: string
+  network: 'Arc Testnet'
+  currency: 'USDC'
+  status: 'pending' | 'executing' | 'completed' | 'failed' | 'blocked'
+  lifecycleStatus: 'planned' | 'budgeted' | 'executing' | 'tracked' | 'reconciled' | 'failed' | 'blocked'
+  budget: ApiMoney
+  estimated: ApiMoney | null
+  currentSpend: ApiMoney
+  reservedSpend?: ApiMoney
+  spendingMode: 'observe' | 'guarded'
+  idempotencyKey: string | null
+  createdAt: string
+  updatedAt: string
+  events?: TaskEventApiRecord[]
+}
+
+export interface TransactionApiRecord {
+  id: string
+  taskId: string
+  txHash: string | null
+  network: 'arc-testnet'
+  fromAddress: string | null
+  toAddress: string | null
+  value: string | null
+  currency: 'USDC'
+  gasUsdc: string | null
+  status: 'pending' | 'success' | 'failed'
+  blockNumber: string | null
+  confirmedAt: string | null
+  createdAt: string
+  executionMode: 'simulated' | 'observed' | 'real'
+  idempotencyKey: string | null
+}
+
+export interface ExecutionApiRecord {
+  id?: string
+  executionId?: string
+  userId?: string
+  agentId: string
+  taskId: string
+  planId: string
+  amount: string
+  reservedAmount?: string
+  currency: 'USDC'
+  network: 'arc-testnet'
+  destination: string
+  mode: 'guarded'
+  status?: 'approved' | 'submitted' | 'confirmed' | 'failed' | 'rejected'
+  idempotencyKey?: string
+  txHash?: string | null
+  duplicate?: boolean
+  createdAt?: string
+  updatedAt?: string
+  transaction?: TransactionApiRecord | null
+}
+
+export interface ReconciliationApiRecord {
+  id?: string
+  taskId: string
+  estimatedCost: string
+  budget: string
+  actualCost: string
+  variance: string | null
+  variancePct: string | null
+  items: Record<string, unknown> | null
+  completedAt: string
+  status: 'pending' | 'completed' | 'failed'
+}
+
+export interface ExecutionInput {
+  agentId: string
+  taskId: string
+  planId: string
+  amount: string
+  destination: string
+  idempotencyKey: string
+  currency?: 'USDC'
+  network?: 'Arc Testnet'
+  mode?: 'guarded'
+  reason?: string
+}
+
+export interface ExactPlanInput {
+  agentId: string
+  task: string
+  network?: 'Arc Testnet'
+  currency?: 'USDC'
+  maxBudget: string
+  safetyMargin: { type: 'fixed' | 'percentage'; value: string }
+  items: Array<{
+    id: string
+    type: string
+    label: string
+    provider: string
+    unitPrice: string
+    quantity: string
+    confidence: string
+    source: 'static' | 'historical' | 'dynamic' | 'estimation'
+    currency: 'USDC'
+  }>
+}
+
+export interface CreateTaskInput {
+  description: string
+  agentId: string
+  network?: 'Arc Testnet'
+  currency?: 'USDC'
+  budget: string
+  estimated?: string
+  planId?: string
+}
+
+export class CostraApiClient {
+  private readonly baseUrl: string
+  private readonly apiKey?: string
+  private readonly requestFetch: typeof globalThis.fetch
+  private csrfToken: string | null = null
+
+  constructor(config: ApiClientConfig = {}) {
+    const runtime = getApiClientRuntimeConfig()
+    this.baseUrl = trimBaseUrl(config.baseUrl ?? runtime.baseUrl)
+    this.apiKey = config.apiKey ?? runtime.apiKey
+    this.requestFetch = config.fetch ?? globalThis.fetch
+  }
+
+  get plans(): Promise<{ plans: CostPlanApiRecord[]; total: number }> {
+    return this.get('/plans')
+  }
+
+  async getCsrf(): Promise<string> {
+    const response = await this.request<{ csrfToken: string }>('/auth/csrf', { method: 'GET' })
+    this.csrfToken = response.csrfToken
+    return response.csrfToken
+  }
+
+  async login(email: string, password: string): Promise<AuthSessionResponse> {
+    const csrfToken = this.csrfToken ?? await this.getCsrf()
+    return this.request<AuthSessionResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+      headers: { 'X-CSRF-Token': csrfToken },
+    })
+  }
+
+  async logout(): Promise<void> {
+    const csrfToken = this.csrfToken ?? await this.getCsrf()
+    await this.request('/auth/logout', { method: 'POST', headers: { 'X-CSRF-Token': csrfToken } })
+    this.csrfToken = null
+  }
+
+  getCurrentUser(): Promise<AuthSessionResponse> {
+    return this.get('/auth/me')
+  }
+
+  get agents(): Promise<{ agents: AgentApiRecord[]; total: number }> {
+    return this.get('/agents')
+  }
+
+  getTasks(): Promise<{ tasks: TaskApiRecord[]; total: number }> {
+    return this.get('/tasks')
+  }
+
+  createExactPlan(input: ExactPlanInput): Promise<CostPlanApiRecord> {
+    return this.post('/plans', input)
+  }
+
+  createTask(input: CreateTaskInput): Promise<TaskApiRecord> {
+    return this.post('/tasks', input)
+  }
+
+  getPlan(id: string): Promise<CostPlanApiRecord> {
+    return this.get(`/plans/${encodeURIComponent(id)}`)
+  }
+
+  getAgent(id: string): Promise<AgentApiRecord> {
+    return this.get(`/agents/${encodeURIComponent(id)}`)
+  }
+
+  getSpending(query: { from?: string; to?: string; limit?: number; offset?: number } = {}): Promise<{ series: Array<{ date: string; amount: string }>; total: string }> {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value))
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    return this.get(`/spending${suffix}`)
+  }
+
+  getTask(id: string): Promise<TaskApiRecord> {
+    return this.get(`/tasks/${encodeURIComponent(id)}`)
+  }
+
+  getTaskTransactions(taskId: string): Promise<{ transactions: TransactionApiRecord[]; total: number }> {
+    return this.get(`/tasks/${encodeURIComponent(taskId)}/transactions`)
+  }
+
+  getPlanReconciliation(planId: string): Promise<ReconciliationApiRecord> {
+    return this.get(`/plans/${encodeURIComponent(planId)}/reconciliation`)
+  }
+
+  execute(input: ExecutionInput): Promise<ExecutionApiRecord> {
+    return this.post('/executions', {
+      ...input,
+      currency: input.currency ?? 'USDC',
+      network: input.network ?? 'Arc Testnet',
+      mode: input.mode ?? 'guarded',
+    })
+  }
+
+  getExecution(id: string): Promise<ExecutionApiRecord> {
+    return this.get(`/executions/${encodeURIComponent(id)}`)
+  }
+
+  trackExecution(id: string): Promise<{ executionId: string; transaction: TransactionApiRecord }> {
+    return this.post(`/executions/${encodeURIComponent(id)}/track`, {})
+  }
+
+  private async get<T>(path: string): Promise<T> {
+    return this.request<T>(path, { method: 'GET' })
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(path, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+  }
+
+  private async request<T>(path: string, init: RequestInit): Promise<T> {
+    const headers = new Headers(init.headers)
+    headers.set('Accept', 'application/json')
+    if (init.body !== undefined) headers.set('Content-Type', 'application/json')
+    if (this.apiKey) headers.set('Authorization', `Bearer ${this.apiKey}`)
+
+    let response: Response
+    try {
+      response = await this.requestFetch(`${this.baseUrl}${path}`, { ...init, headers, credentials: 'include' })
+    } catch (error) {
+      throw new ApiClientError({
+        status: 0,
+        code: 'unavailable',
+        message: 'COSTRA API is unavailable.',
+        requestId: null,
+      })
+    }
+
+    const requestId = response.headers.get('x-request-id')
+    const payload = await response.json().catch(() => null) as unknown
+    if (!response.ok) {
+      const errorPayload = isApiErrorPayload(payload)
+        ? payload
+        : { error: 'unavailable', message: 'COSTRA API returned an invalid error response.' }
+      throw new ApiClientError({
+        status: response.status,
+        code: errorPayload.error,
+        message: errorPayload.message,
+        requestId: errorPayload.requestId ?? requestId,
+      })
+    }
+
+    return payload as T
+  }
+}
+
+function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as Record<string, unknown>).error === 'string'
+    && typeof (value as Record<string, unknown>).message === 'string'
+}
+
+export const costraApi = new CostraApiClient()

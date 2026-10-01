@@ -1,0 +1,70 @@
+name: COSTRA CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: costra_ci
+          POSTGRES_PASSWORD: costra_ci_password
+          POSTGRES_DB: costra_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U costra_ci -d costra_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://costra_ci:costra_ci_password@localhost:5432/costra_ci
+      COSTRA_ENV: test
+      NODE_OPTIONS: ''
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Frontend typecheck
+        run: bun run typecheck:frontend
+
+      - name: Backend typecheck
+        run: bun run typecheck:server
+
+      - name: SDK typecheck
+        run: bun run typecheck:sdk
+
+      - name: Lint application source
+        run: bun run lint:check
+
+      - name: Apply fresh database migrations
+        run: bun run db:migrate
+
+      - name: Verify migration upgrade is idempotent
+        run: bun run db:migrate
+
+      - name: Run unit and PostgreSQL integration tests
+        run: bun test
+
+      - name: Check diff hygiene
+        run: git diff --check

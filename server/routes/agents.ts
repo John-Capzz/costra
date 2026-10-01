@@ -1,13 +1,27 @@
 import { Router } from 'express'
-import { DEMO_AGENTS } from '../../src/lib/demo-data'
+import { getDefaultDatabasePool } from '../db/pool'
+import { asDatabaseUnavailable } from '../db/errors'
+import { requireAuthenticatedPrincipal } from '../auth/authorization'
+import { AgentRepository } from '../repositories/agents'
+import type { DatabasePool } from '../repositories/types'
+import { NotFoundError } from '../errors'
 
-export function createAgentsRouter() {
+export function createAgentsRouter(db?: DatabasePool) {
   const router = Router()
-  router.get('/', (_req, res) => res.json({ agents: DEMO_AGENTS, total: DEMO_AGENTS.length }))
-  router.get('/:id', (req, res) => {
-    const agent = DEMO_AGENTS.find((a) => a.id === req.params.id)
-    if (!agent) return res.status(404).json({ error: 'not_found' })
-    res.json(agent)
+  router.get('/', async (req, res, next) => {
+    try {
+      const principal = requireAuthenticatedPrincipal(req.principal)
+      const agents = await new AgentRepository(db ?? getDefaultDatabasePool()).listForUser(principal.userId)
+      res.json({ agents, total: agents.length })
+    } catch (error) { next(asDatabaseUnavailable(error)) }
+  })
+  router.get('/:id', async (req, res, next) => {
+    try {
+      const principal = requireAuthenticatedPrincipal(req.principal)
+      const agent = await new AgentRepository(db ?? getDefaultDatabasePool()).findByIdForUser(req.params.id, principal.userId)
+      if (!agent) throw new NotFoundError('Agent not found.')
+      res.json(agent)
+    } catch (error) { next(asDatabaseUnavailable(error)) }
   })
   return router
 }

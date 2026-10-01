@@ -1,155 +1,294 @@
 // ============================================================
 // COSTRA — Arc Chain Adapter
 //
-// ARCHITECTURE: ChainAdapter interface + ArcAdapter implementation.
-// Additional chains (Ethereum, Base, Arbitrum…) add their own
-// adapter without touching COSTRA core logic.
-//
-// NOTE: This file contains the interface + a testnet-safe
-// simulation layer. Live Arc RPC calls are made via viem
-// from the frontend — see onchain-facts / wagmi patterns.
+// Arc Testnet is the only active adapter in V1. The legacy planning
+// methods remain simulation-only; explicit execution methods below are
+// configuration-gated and never fall back to simulation.
 // ============================================================
 
 import type { Task } from '@/types'
+import { createPublicClient, createWalletClient, encodeFunctionData, http, parseUnits, type Address, type Hash } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { arcTestnet } from 'viem/chains'
+import { getUsdc } from '../onchain-facts'
+import { Money, MoneyError } from './money'
 
-// ---- ChainAdapter interface --------------------------------
+export const ARC_TESTNET_CHAIN_ID = 5042002 as const
+export const ARC_TESTNET_USDC_DECIMALS = 6 as const
+export const ARC_TESTNET_NATIVE_GAS_DECIMALS = 18 as const
+export const ARC_TESTNET_USDC_ADDRESS = getUsdc(ARC_TESTNET_CHAIN_ID)?.address as Address
+
+const ERC20_TRANSFER_ABI = [{
+  name: 'transfer', type: 'function', stateMutability: 'nonpayable',
+  inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }],
+  outputs: [{ name: 'success', type: 'bool' }],
+}] as const
+
+export class ArcAdapterConfigurationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ArcAdapterConfigurationError'
+  }
+}
+
+export interface ArcTestnetExecutionConfig {
+  rpcUrl: string
+  chainId: typeof ARC_TESTNET_CHAIN_ID
+  executionPrivateKey: `0x${string}`
+  executionAddress: Address
+}
+
+export interface ArcTestnetEnvironment {
+  ARC_TESTNET_RPC_URL?: string
+  ARC_TESTNET_CHAIN_ID?: string
+  ARC_TESTNET_EXECUTION_PRIVATE_KEY?: string
+  ARC_TESTNET_EXECUTION_ADDRESS?: string
+}
+
+export function readArcTestnetExecutionConfig(
+  environment: ArcTestnetEnvironment = process.env,
+): ArcTestnetExecutionConfig {
+  const rpcUrl = environment.ARC_TESTNET_RPC_URL?.trim()
+  const configuredChainId = environment.ARC_TESTNET_CHAIN_ID?.trim()
+  const privateKey = environment.ARC_TESTNET_EXECUTION_PRIVATE_KEY?.trim()
+  const expectedAddress = environment.ARC_TESTNET_EXECUTION_ADDRESS?.trim()
+
+  if (!rpcUrl) throw new ArcAdapterConfigurationError('ARC_TESTNET_RPC_URL is required for Arc execution.')
+  try {
+    if (new URL(rpcUrl).protocol !== 'https:') throw new Error('protocol')
+  } catch {
+    throw new ArcAdapterConfigurationError('ARC_TESTNET_RPC_URL must be a valid HTTPS URL.')
+  }
+  if (configuredChainId !== undefined && configuredChainId !== String(ARC_TESTNET_CHAIN_ID)) {
+    throw new ArcAdapterConfigurationError('ARC_TESTNET_CHAIN_ID must be 5042002.')
+  }
+  if (!privateKey || !/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
+    throw new ArcAdapterConfigurationError('ARC_TESTNET_EXECUTION_PRIVATE_KEY must be a configured testnet key.')
+  }
+
+  const account = privateKeyToAccount(privateKey as `0x${string}`)
+  if (expectedAddress && expectedAddress.toLowerCase() !== account.address.toLowerCase()) {
+    throw new ArcAdapterConfigurationError('ARC_TESTNET_EXECUTION_ADDRESS does not match the configured execution key.')
+  }
+
+  return {
+    rpcUrl,
+    chainId: ARC_TESTNET_CHAIN_ID,
+    executionPrivateKey: privateKey as `0x${string}`,
+    executionAddress: account.address,
+  }
+}
+
+export interface UsdcTransferRequest {
+  destination: string
+  amount: string
+}
+
+export interface PreparedUsdcTransfer {
+  chainId: typeof ARC_TESTNET_CHAIN_ID
+  token: Address
+  tokenDecimals: typeof ARC_TESTNET_USDC_DECIMALS
+  destination: Address
+  amount: string
+  amountBaseUnits: bigint
+  data: `0x${string}`
+  value: bigint
+}
+
+export interface ArcTransactionReceipt {
+  hash: Hash
+  status: 'success' | 'failed'
+  blockNumber: string
+  gasUsed: string
+  effectiveGasPrice: string
+  feeUsdc: string
+}
+
+export function nativeGasUnitsToUsdc(nativeUnits: bigint): string {
+  const divisor = 10n ** 12n
+  const whole = nativeUnits / divisor
+  const remainder = nativeUnits % divisor
+  const roundedWhole = remainder * 2n >= divisor ? whole + 1n : whole
+  return `${roundedWhole / 1_000_000n}.${(roundedWhole % 1_000_000n).toString().padStart(6, '0')}`
+}
 
 export interface TransactionCostEstimate {
-  estimatedCost: number
-  currency:      string
-  unit:          'USDC'
-  confidence:    number
-  note:          string
+  estimatedCost: string
+  currency: string
+  unit: 'USDC'
+  confidence: number
+  note: string
 }
 
 export interface TransactionRecord {
-  hash:      string
-  network:   string
-  from?:     string
-  to?:       string
-  value:     number
-  currency:  string
-  status:    'pending' | 'success' | 'failed'
+  hash: string
+  network: string
+  from?: string
+  to?: string
+  value: string
+  currency: string
+  status: 'pending' | 'success' | 'failed'
   timestamp: string
-  gasUsedUSDC: number
+  gasUsedUSDC: string
 }
 
 export interface BalanceResult {
-  address:  string
-  amount:   number
+  address: string
+  amount: string
   currency: 'USDC'
-  network:  string
-  source:   'demo' | 'live'
+  network: string
+  source: 'simulated' | 'live'
 }
 
 export interface ChainAdapter {
-  name:          string
-  chainId:       number
-  currency:      'USDC'
-
+  name: string
+  chainId: number
+  currency: 'USDC'
   estimateTransactionCost(options?: {
     complexity?: 'simple' | 'moderate' | 'complex'
-    calldata?:   string
+    calldata?: string
   }): TransactionCostEstimate | Promise<TransactionCostEstimate>
-
   getTransaction(hash: string): TransactionRecord | null | Promise<TransactionRecord | null>
-
   getBalance(address: string): BalanceResult | Promise<BalanceResult>
-
   trackTransaction(task: Task, hash: string): void | Promise<void>
-
   isValidAddress(address: string): boolean
 }
 
-// ---- ArcAdapter (testnet) ----------------------------------
-
 export class ArcAdapter implements ChainAdapter {
-  readonly name      = 'Arc Testnet'
-  readonly chainId   = 5042002
-  readonly currency  = 'USDC' as const
+  readonly name = 'Arc Testnet'
+  readonly chainId = ARC_TESTNET_CHAIN_ID
+  readonly currency = 'USDC' as const
+  readonly usdcAddress = ARC_TESTNET_USDC_ADDRESS
+  readonly usdcDecimals = ARC_TESTNET_USDC_DECIMALS
+  readonly nativeGasDecimals = ARC_TESTNET_NATIVE_GAS_DECIMALS
 
-  // Flat fee model: Arc gas is priced in USDC, extremely
-  // predictable. Real implementation reads from Arc RPC.
-  private readonly baseFeeUSDC = 0.006
+  constructor(private readonly executionConfig?: ArcTestnetExecutionConfig) {}
+
+  private readonly baseFeeUSDC = '0.006000'
 
   estimateTransactionCost(options: {
     complexity?: 'simple' | 'moderate' | 'complex'
-    calldata?:   string
+    calldata?: string
   } = {}): TransactionCostEstimate {
-    const multiplier =
-      options.complexity === 'complex'  ? 2.5 :
-      options.complexity === 'moderate' ? 1.5 : 1.0
-
+    const multiplier = options.complexity === 'complex' ? '2.5' : options.complexity === 'moderate' ? '1.5' : '1'
     return {
-      estimatedCost: +(this.baseFeeUSDC * multiplier).toFixed(6),
-      currency:      'USDC',
-      unit:          'USDC',
-      confidence:    0.94,
-      note:          'Arc native gas is USDC. Flat fee model, sub-second finality.',
+      estimatedCost: Money.multiplyDecimal(this.baseFeeUSDC, multiplier, 'half-up').toString(),
+      currency: 'USDC',
+      unit: 'USDC',
+      confidence: 0.94,
+      note: 'Simulated Arc Testnet estimate; live fee and finality reads are deferred.',
     }
   }
 
-  getTransaction(hash: string): TransactionRecord | null {
-    // In production: viem publicClient.getTransaction(hash)
-    // Returning null means "not found" — callers handle gracefully.
-    if (!this.isValidAddress(hash)) return null
-    return {
-      hash,
-      network:     this.name,
-      value:       0,
-      currency:    'USDC',
-      status:      'success',
-      timestamp:   new Date().toISOString(),
-      gasUsedUSDC: this.baseFeeUSDC,
-    }
+  getTransaction(_hash: string): TransactionRecord | null {
+    return null
   }
 
   getBalance(address: string): BalanceResult {
-    // In production: useReadContract with erc20Abi balanceOf
-    // at USDC address from @/onchain-facts getUsdc(5042002)
-    return {
-      address,
-      amount:   0,
-      currency: 'USDC',
-      network:  this.name,
-      source:   'demo',
-    }
+    return { address, amount: '0.000000', currency: 'USDC', network: this.name, source: 'simulated' }
   }
 
   trackTransaction(task: Task, hash: string): void {
-    // In production: poll viem publicClient.waitForTransactionReceipt
-    // and append an ARC_TRANSACTION event to the task via the API.
-    console.info(`[ArcAdapter] Tracking tx ${hash} for task ${task.id}`)
+    console.info(`[ArcAdapter] Simulated tracking only; no live receipt lookup for tx ${hash} on task ${task.id}`)
   }
 
   isValidAddress(address: string): boolean {
-    return /^0x[0-9a-fA-F]{40,64}$/.test(address)
+    return /^0x[0-9a-fA-F]{40}$/.test(address)
+  }
+
+  prepareUsdcTransfer(request: UsdcTransferRequest): PreparedUsdcTransfer {
+    if (!this.isValidAddress(request.destination)) {
+      throw new ArcAdapterConfigurationError('USDC destination must be a valid EVM address.')
+    }
+    let amountBaseUnits: bigint
+    let normalizedAmount: string
+    try {
+      const amount = Money.from(request.amount)
+      if (amount.isZero()) throw new ArcAdapterConfigurationError('USDC amount must be greater than zero.')
+      normalizedAmount = amount.toString()
+      amountBaseUnits = parseUnits(normalizedAmount, ARC_TESTNET_USDC_DECIMALS)
+    } catch (error) {
+      if (error instanceof ArcAdapterConfigurationError) throw error
+      if (error instanceof MoneyError) throw new ArcAdapterConfigurationError(`USDC amount: ${error.message}`)
+      throw error
+    }
+
+    return {
+      chainId: ARC_TESTNET_CHAIN_ID,
+      token: this.usdcAddress,
+      tokenDecimals: ARC_TESTNET_USDC_DECIMALS,
+      destination: request.destination as Address,
+      amount: normalizedAmount,
+      amountBaseUnits,
+      data: encodeFunctionData({ abi: ERC20_TRANSFER_ABI, functionName: 'transfer', args: [request.destination as Address, amountBaseUnits] }),
+      // Native Arc gas uses 18-decimal USDC; it is intentionally not mixed
+      // into this 6-decimal ERC-20 transfer amount.
+      value: 0n,
+    }
+  }
+
+  private requireExecutionConfig(): ArcTestnetExecutionConfig {
+    if (!this.executionConfig) throw new ArcAdapterConfigurationError('Arc execution is not configured.')
+    return this.executionConfig
+  }
+
+  getExecutionAddress(): Address {
+    return this.requireExecutionConfig().executionAddress
+  }
+
+  executionFeeReserveUsdc(): string {
+    return '0.006000'
+  }
+
+  private async assertConnectedChain(client: { getChainId: () => Promise<number> }): Promise<void> {
+    if (await client.getChainId() !== ARC_TESTNET_CHAIN_ID) {
+      throw new ArcAdapterConfigurationError('Connected RPC is not Arc Testnet.')
+    }
+  }
+
+  async submitUsdcTransfer(request: UsdcTransferRequest): Promise<Hash> {
+    const config = this.requireExecutionConfig()
+    const prepared = this.prepareUsdcTransfer(request)
+    const account = privateKeyToAccount(config.executionPrivateKey)
+    if (account.address.toLowerCase() !== config.executionAddress.toLowerCase()) {
+      throw new ArcAdapterConfigurationError('The runtime execution identity does not match its configured address.')
+    }
+    const client = createWalletClient({ account, chain: arcTestnet, transport: http(config.rpcUrl) })
+    await this.assertConnectedChain(client)
+    const publicClient = createPublicClient({ chain: arcTestnet, transport: http(config.rpcUrl) })
+    await this.assertConnectedChain(publicClient)
+    const bytecode = await publicClient.getBytecode({ address: prepared.token })
+    if (!bytecode || bytecode === '0x') {
+      throw new ArcAdapterConfigurationError('The configured Arc Testnet USDC contract was not found.')
+    }
+    return client.writeContract({
+      address: prepared.token,
+      abi: ERC20_TRANSFER_ABI,
+      functionName: 'transfer',
+      args: [prepared.destination, prepared.amountBaseUnits],
+      chain: arcTestnet,
+      account,
+    })
+  }
+
+  async getReceipt(hash: Hash): Promise<ArcTransactionReceipt> {
+    const config = this.requireExecutionConfig()
+    const client = createPublicClient({ chain: arcTestnet, transport: http(config.rpcUrl) })
+    await this.assertConnectedChain(client)
+    const receipt = await client.waitForTransactionReceipt({ hash })
+    const feeNativeUnits = receipt.gasUsed * receipt.effectiveGasPrice
+    return {
+      hash: receipt.transactionHash,
+      status: receipt.status === 'success' ? 'success' : 'failed',
+      blockNumber: receipt.blockNumber.toString(),
+      gasUsed: receipt.gasUsed.toString(),
+      effectiveGasPrice: receipt.effectiveGasPrice.toString(),
+      feeUsdc: nativeGasUnitsToUsdc(feeNativeUnits),
+    }
   }
 }
 
-// ---- Arc Mainnet Adapter ----------------------------------
-
-export class ArcMainnetAdapter implements ChainAdapter {
-  readonly name     = 'Arc Mainnet' as const
-  readonly chainId  = 5042 as number
-  readonly currency = 'USDC' as const
-  private readonly base = new ArcAdapter()
-
-  estimateTransactionCost(options?: Parameters<ArcAdapter['estimateTransactionCost']>[0]): TransactionCostEstimate {
-    return this.base.estimateTransactionCost(options ?? {})
-  }
-  getTransaction(hash: string): TransactionRecord | null { return this.base.getTransaction(hash) }
-  getBalance(address: string): BalanceResult             { return this.base.getBalance(address)  }
-  trackTransaction(task: Task, hash: string): void       { this.base.trackTransaction(task, hash) }
-  isValidAddress(address: string): boolean               { return this.base.isValidAddress(address) }
-}
-
-// ---- Adapter registry -------------------------------------
-
-const adapters: Record<string, ChainAdapter> = {
-  'arc-testnet': new ArcAdapter(),
-  'arc':         new ArcMainnetAdapter(),
-}
+const adapters: Record<string, ChainAdapter> = { 'arc-testnet': new ArcAdapter() }
 
 export function getAdapter(network: string): ChainAdapter | undefined {
   return adapters[network.toLowerCase().replace(' ', '-')]

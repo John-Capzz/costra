@@ -1,53 +1,118 @@
-// ============================================================
-// COSTRA API — POST /plans  GET /plans/:id
-// ============================================================
-
 import { Router } from 'express'
-import { randomUUID } from 'node:crypto'
-import { estimateCost, buildCostPlan } from '../../src/lib/cost-engine'
+import { getDefaultDatabasePool } from '../db/pool'
+import { asDatabaseUnavailable } from '../db/errors'
+import { requireAuthenticatedPrincipal } from '../auth/authorization'
+import { AgentRepository } from '../repositories/agents'
+import { PlanRepository } from '../repositories/plans'
+import type { CostItemRecord, CostPlanRecord, DatabasePool } from '../repositories/types'
+import { persistEstimatedPlan } from '../services/plan-persistence'
+import { persistExactPlan } from '../services/phase3-plan-persistence'
+import { validateExactPlanBody, validateIdentifier, validatePlanBody } from '../validation'
+import { BudgetPlanningError } from '../../src/lib/budget-planning'
+import { NotFoundError, ValidationError } from '../errors'
 
-export function createPlansRouter() {
+function serializePlan(plan: CostPlanRecord, items: CostItemRecord[] = []) {
+  return {
+    ...plan,
+    network: plan.network === 'arc-testnet' ? 'Arc Testnet' : plan.network,
+    maxBudget: plan.maxBudget,
+    estimatedCost: plan.estimatedCost,
+    safetyBuffer: plan.safetyBuffer,
+    recommendedBudget: plan.recommendedBudget,
+    confidence: plan.confidence,
+    items: items.map((item) => ({
+      ...item,
+      unitPrice: item.unitPrice, quantity: item.quantity,
+      estimated: item.estimated, confidence: item.confidence,
+    })),
+  }
+}
+
+function serializeExactPlan(result: Awaited<ReturnType<typeof persistExactPlan>>) {
+  if (!result) return null
+  return {
+    id: result.plan.id,
+    agentId: result.plan.agentId,
+    taskDescription: result.plan.taskDescription,
+    network: 'Arc Testnet',
+    currency: result.estimate.currency,
+    status: result.plan.status,
+    maxBudget: result.budget.maximumBudget,
+    estimatedCost: result.estimate.estimatedCost,
+    safetyBuffer: result.budget.safetyMargin,
+    recommendedBudget: result.budget.recommendedBudget,
+    headroom: result.budget.headroom,
+    estimateByType: result.estimate.byType,
+    items: result.estimate.items.map((item) => ({
+      id: item.id,
+      type: item.type,
+      label: item.label,
+      provider: item.provider,
+      unitPrice: item.unitPrice,
+      quantity: item.quantity,
+      estimated: item.estimated,
+      confidence: item.confidence,
+      source: item.source,
+      currency: item.currency,
+    })),
+  }
+}
+
+export function createPlansRouter(db?: DatabasePool) {
   const router = Router()
-
-  // POST /api/v1/plans — create a cost plan
-  router.post('/', (req, res) => {
-    const { agentId, agentName, task, network, currency, maxBudget } = req.body
-
-    if (!task || typeof task !== 'string' || task.trim().length === 0) {
-      return res.status(400).json({ error: 'validation', message: 'task is required' })
-    }
-    if (!maxBudget || isNaN(parseFloat(maxBudget))) {
-      return res.status(400).json({ error: 'validation', message: 'maxBudget must be a number' })
-    }
-
-    const estimation = estimateCost({
-      agentId:   agentId ?? 'unknown',
-      agentName: agentName ?? 'Agent',
-      task:      task.trim(),
-      network:   network ?? 'Arc Testnet',
-      currency:  currency ?? 'USDC',
-      maxBudget: parseFloat(maxBudget),
-    })
-
-    const planId = `plan_${randomUUID().slice(0, 8)}`
-    const plan   = buildCostPlan(
-      { agentId: agentId ?? 'unknown', agentName: agentName ?? 'Agent', task, network: network ?? 'Arc Testnet', currency: currency ?? 'USDC', maxBudget: parseFloat(maxBudget) },
-      estimation,
-      planId,
-    )
-
-    res.status(201).json({
-      ...plan,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    })
+  router.get('/', async (req, res, next) => {
+    try {
+      const principal = requireAuthenticatedPrincipal(req.principal)
+      const repository = new PlanRepository(db ?? getDefaultDatabasePool())
+      const plans = await repository.listForUser(principal.userId)
+      const items = await Promise.all(plans.map((plan) => repository.listItemsForUser(plan.id, principal.userId)))
+      res.json({ plans: plans.map((plan, index) => serializePlan(plan, items[index])), total: plans.length })
+    } catch (error) { next(asDatabaseUnavailable(error)) }
   })
-
-  // GET /api/v1/plans/:id
-  router.get('/:id', (req, res) => {
-    // In production: fetch from DB
-    res.status(404).json({ error: 'not_found', message: `Plan ${req.params.id} not found.` })
+  router.post('/', async (req, res, next) => {
+    try {
+      const principal = requireAuthenticatedPrincipal(req.principal)
+      if (isExactPlanRequest(req.body)) {
+        const input = validateExactPlanBody(req.body)
+        const persisted = await persistExactPlan(db ?? getDefaultDatabasePool(), {
+          userId: principal.userId,
+          agentId: input.agentId,
+          taskDescription: input.task,
+          maximumBudget: input.maxBudget,
+          safetyMargin: input.safetyMargin,
+          items: input.items,
+        })
+        if (!persisted) throw new NotFoundError('Agent not found.')
+        res.status(201).json(serializeExactPlan(persisted))
+        return
+      }
+      const input = validatePlanBody(req.body)
+      const pool = db ?? getDefaultDatabasePool()
+      const agent = await new AgentRepository(pool).findByIdForUser(input.agentId, principal.userId)
+      if (!agent) throw new NotFoundError('Agent not found.')
+      const persisted = await persistEstimatedPlan(pool, {
+        userId: principal.userId, agentId: agent.id, agentName: agent.name,
+        taskDescription: input.task, maxBudget: input.maxBudget,
+      })
+      if (!persisted) throw new NotFoundError('Agent not found.')
+      res.status(201).json(serializePlan(persisted.plan, persisted.items))
+    } catch (error) {
+      next(error instanceof BudgetPlanningError ? new ValidationError(error.message) : asDatabaseUnavailable(error))
+    }
   })
-
+  router.get('/:id', async (req, res, next) => {
+    try {
+      const principal = requireAuthenticatedPrincipal(req.principal)
+      const id = validateIdentifier(req.params.id, 'id')
+      const repository = new PlanRepository(db ?? getDefaultDatabasePool())
+      const plan = await repository.findByIdForUser(id, principal.userId)
+      if (!plan) throw new NotFoundError('Plan not found.')
+      res.json(serializePlan(plan, await repository.listItemsForUser(id, principal.userId)))
+    } catch (error) { next(asDatabaseUnavailable(error)) }
+  })
   return router
+}
+
+function isExactPlanRequest(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && 'items' in value
 }
