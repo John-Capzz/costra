@@ -20,7 +20,7 @@ export function createAuthMiddleware(store?: ApiKeyStore, sessionStore?: Browser
 
       const sessionToken = getCookie(req, SESSION_COOKIE)
       if (!sessionToken) {
-        req.principal = await authenticateApiKey(null, store)
+        req.principal = undefined
         next()
         return
       }
@@ -33,7 +33,7 @@ export function createAuthMiddleware(store?: ApiKeyStore, sessionStore?: Browser
       }
       if (!record) throw new AuthenticationError('Your browser session is invalid or expired.')
       req.principal = buildBrowserPrincipal(record, new Date())
-      req.browserSession = { sessionId: record.id, token: sessionToken }
+      req.browserSession = { sessionId: record.id, token: sessionToken, csrfToken: record.csrfToken }
       next()
     } catch (error) {
       next(error)

@@ -14,7 +14,7 @@ function store(): BrowserSessionStore & { sessions: Map<string, BrowserSessionRe
     async findUserPassword(email) { return email === user.email ? { ...user, passwordHash: await hashPassword('correct horse battery staple') } : null },
     async createSession(input) {
       const id = `session-${sessions.size + 1}`
-      sessions.set(input.tokenHash, { id, userId: input.userId, email: user.email, name: user.name, expiresAt: input.expiresAt, revokedAt: null })
+      sessions.set(input.tokenHash, { id, userId: input.userId, email: user.email, name: user.name, csrfToken: input.csrfToken, expiresAt: input.expiresAt, revokedAt: null })
       return { id, expiresAt: input.expiresAt }
     },
     async findSessionByTokenHash(tokenHash, now) {
@@ -48,17 +48,17 @@ describe('Phase 6.11.2 browser authentication', () => {
     const sessions = store()
     const { server, baseUrl } = await start(sessions)
     try {
-      const csrf = await fetch(`${baseUrl}/api/v1/auth/csrf`)
-      const csrfToken = (await csrf.json() as { csrfToken: string }).csrfToken
-      const csrfCookie = csrf.headers.get('set-cookie') ?? ''
-      const response = await fetch(`${baseUrl}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: csrfCookie, 'x-csrf-token': csrfToken }, body: JSON.stringify({ email: user.email, password: 'correct horse battery staple' }) })
+      const response = await fetch(`${baseUrl}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, password: 'correct horse battery staple' }) })
+      const body = await response.json() as { csrfToken?: string }
       expect(response.status).toBe(200)
+      expect(body.csrfToken).toMatch(/^[A-Za-z0-9_-]{40,}$/)
       expect(response.headers.get('set-cookie')).toContain('HttpOnly')
+      expect(response.headers.get('set-cookie')).not.toContain('costra_csrf')
       expect(response.headers.get('set-cookie')).not.toContain('api')
     } finally { server.close() }
   })
 
-  test('invalid credentials and missing CSRF token fail safely', async () => {
+  test('invalid credentials fail safely', async () => {
     const sessions = store(); const { server, baseUrl } = await start(sessions)
     try {
       const response = await fetch(`${baseUrl}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, password: 'wrong password' }) })
@@ -70,15 +70,17 @@ describe('Phase 6.11.2 browser authentication', () => {
   test('session authenticates /me and logout revokes it', async () => {
     const sessions = store(); const { server, baseUrl } = await start(sessions)
     try {
-      const csrf = await fetch(`${baseUrl}/api/v1/auth/csrf`)
-      const csrfToken = (await csrf.json() as { csrfToken: string }).csrfToken
-      const csrfCookie = csrf.headers.get('set-cookie') ?? ''
-      const login = await fetch(`${baseUrl}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: csrfCookie, 'x-csrf-token': csrfToken }, body: JSON.stringify({ email: user.email, password: 'correct horse battery staple' }) })
+      const login = await fetch(`${baseUrl}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: user.email, password: 'correct horse battery staple' }) })
+      const loginBody = await login.json() as { csrfToken: string }
       const sessionCookie = cookieValue(login, 'costra_session')
+      const csrf = await fetch(`${baseUrl}/api/v1/auth/csrf`, { headers: { cookie: `costra_session=${sessionCookie}` } })
+      const csrfToken = (await csrf.json() as { csrfToken: string }).csrfToken
+      expect(csrf.status).toBe(200)
+      expect(csrfToken).toBe(loginBody.csrfToken)
       const me = await fetch(`${baseUrl}/api/v1/auth/me`, { headers: { cookie: `costra_session=${sessionCookie}` } })
       expect(me.status).toBe(200)
       expect((await me.json()).user.email).toBe(user.email)
-      const logout = await fetch(`${baseUrl}/api/v1/auth/logout`, { method: 'POST', headers: { cookie: `costra_session=${sessionCookie}; ${csrfCookie}`, 'x-csrf-token': csrfToken } })
+      const logout = await fetch(`${baseUrl}/api/v1/auth/logout`, { method: 'POST', headers: { cookie: `costra_session=${sessionCookie}`, 'x-csrf-token': csrfToken } })
       expect(logout.status).toBe(204)
       expect(sessions.revoked).toHaveLength(1)
       expect(hashSessionToken('secret')).not.toBe('secret')

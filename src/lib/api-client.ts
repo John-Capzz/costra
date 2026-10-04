@@ -4,8 +4,14 @@ export interface ApiClientConfig {
   fetch?: typeof globalThis.fetch
 }
 
+interface RawApiResponse {
+  status: number
+  requestId: string | null
+  payload: unknown
+}
+
 export interface AuthUser { id: string; email: string | null; name: string | null }
-export interface AuthSessionResponse { user: AuthUser; expiresAt?: string; authMethod?: 'api_key' | 'browser_session' }
+export interface AuthSessionResponse { user: AuthUser; expiresAt?: string; authMethod?: 'api_key' | 'browser_session'; csrfToken?: string }
 
 export interface ApiErrorPayload {
   error: string
@@ -34,7 +40,7 @@ export interface ApiClientRuntimeConfig {
 
 export type ApiMoney = string
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3001/api/v1'
+const DEFAULT_API_BASE_URL = '/api/v1'
 
 function trimBaseUrl(value: string): string {
   return value.trim().replace(/\/$/, '')
@@ -229,6 +235,7 @@ export class CostraApiClient {
   private readonly baseUrl: string
   private readonly apiKey?: string
   private readonly requestFetch: typeof globalThis.fetch
+  private readonly useXhr: boolean
   private csrfToken: string | null = null
 
   constructor(config: ApiClientConfig = {}) {
@@ -236,6 +243,9 @@ export class CostraApiClient {
     this.baseUrl = trimBaseUrl(config.baseUrl ?? runtime.baseUrl)
     this.apiKey = config.apiKey ?? runtime.apiKey
     this.requestFetch = config.fetch ?? globalThis.fetch
+    this.useXhr = config.fetch === undefined
+      && Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV)
+      && typeof XMLHttpRequest !== 'undefined'
   }
 
   get plans(): Promise<{ plans: CostPlanApiRecord[]; total: number }> {
@@ -249,17 +259,18 @@ export class CostraApiClient {
   }
 
   async login(email: string, password: string): Promise<AuthSessionResponse> {
-    const csrfToken = this.csrfToken ?? await this.getCsrf()
-    return this.request<AuthSessionResponse>('/auth/login', {
+    const response = await this.request<AuthSessionResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
-      headers: { 'X-CSRF-Token': csrfToken },
     })
+    this.csrfToken = response.csrfToken ?? null
+    return response
   }
 
   async logout(): Promise<void> {
     const csrfToken = this.csrfToken ?? await this.getCsrf()
-    await this.request('/auth/logout', { method: 'POST', headers: { 'X-CSRF-Token': csrfToken } })
+    this.csrfToken = csrfToken
+    await this.request('/auth/logout', { method: 'POST' })
     this.csrfToken = null
   }
 
@@ -345,11 +356,35 @@ export class CostraApiClient {
     headers.set('Accept', 'application/json')
     if (init.body !== undefined) headers.set('Content-Type', 'application/json')
     if (this.apiKey) headers.set('Authorization', `Bearer ${this.apiKey}`)
+    const method = (init.method ?? 'GET').toUpperCase()
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && this.csrfToken) {
+      headers.set('X-CSRF-Token', this.csrfToken)
+    }
 
+    const response = this.useXhr
+      ? await this.requestWithXhr(`${this.baseUrl}${path}`, init, headers)
+      : await this.requestWithFetch(`${this.baseUrl}${path}`, init, headers)
+
+    if (response.status < 200 || response.status >= 300) {
+      const errorPayload = isApiErrorPayload(response.payload)
+        ? response.payload
+        : { error: 'unavailable', message: 'COSTRA API returned an invalid error response.' }
+      throw new ApiClientError({
+        status: response.status,
+        code: errorPayload.error,
+        message: errorPayload.message,
+        requestId: errorPayload.requestId ?? response.requestId,
+      })
+    }
+
+    return response.payload as T
+  }
+
+  private async requestWithFetch(url: string, init: RequestInit, headers: Headers): Promise<RawApiResponse> {
     let response: Response
     try {
-      response = await this.requestFetch(`${this.baseUrl}${path}`, { ...init, headers, credentials: 'include' })
-    } catch (error) {
+      response = await this.requestFetch(url, { ...init, headers, credentials: 'include' })
+    } catch {
       throw new ApiClientError({
         status: 0,
         code: 'unavailable',
@@ -358,21 +393,41 @@ export class CostraApiClient {
       })
     }
 
-    const requestId = response.headers.get('x-request-id')
-    const payload = await response.json().catch(() => null) as unknown
-    if (!response.ok) {
-      const errorPayload = isApiErrorPayload(payload)
-        ? payload
-        : { error: 'unavailable', message: 'COSTRA API returned an invalid error response.' }
-      throw new ApiClientError({
-        status: response.status,
-        code: errorPayload.error,
-        message: errorPayload.message,
-        requestId: errorPayload.requestId ?? requestId,
-      })
+    return {
+      status: response.status,
+      requestId: response.headers.get('x-request-id'),
+      payload: await response.json().catch(() => null) as unknown,
     }
+  }
 
-    return payload as T
+  private requestWithXhr(url: string, init: RequestInit, headers: Headers): Promise<RawApiResponse> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open(init.method ?? 'GET', url, true)
+      xhr.withCredentials = true
+      headers.forEach((value, key) => xhr.setRequestHeader(key, value))
+      xhr.onload = () => {
+        let payload: unknown = null
+        try {
+          payload = xhr.responseText ? JSON.parse(xhr.responseText) as unknown : null
+        } catch {
+          payload = null
+        }
+        resolve({
+          status: xhr.status,
+          requestId: xhr.getResponseHeader('x-request-id'),
+          payload,
+        })
+      }
+      xhr.onerror = () => reject(new ApiClientError({
+        status: 0,
+        code: 'unavailable',
+        message: 'COSTRA API is unavailable.',
+        requestId: null,
+      }))
+      xhr.ontimeout = xhr.onerror
+      xhr.send(init.body === undefined ? null : init.body as XMLHttpRequestBodyInit)
+    })
   }
 }
 

@@ -5,6 +5,7 @@ import { AuthenticationError, UnavailableError } from '../server/errors'
 import { errorHandler } from '../server/middleware/error'
 import { requestIdMiddleware } from '../server/middleware/requestId'
 import { createAuthMiddleware } from '../server/middleware/auth'
+import { requireAuthenticatedPrincipal } from '../server/auth/authorization'
 import type { ApiKeyRecord, ApiKeyStore } from '../server/auth/contracts'
 import {
   authenticateApiKey,
@@ -48,6 +49,15 @@ beforeAll(async () => {
   app.use(requestIdMiddleware)
   app.use(createAuthMiddleware(store))
   app.get('/principal', (req, res) => res.json(req.principal))
+  app.get('/csrf', (_req, res) => res.json({ csrfToken: 'test-csrf-token' }))
+  app.get('/plans', (req, res, next) => {
+    try {
+      requireAuthenticatedPrincipal(req.principal)
+      res.json({ plans: [] })
+    } catch (error) {
+      next(error)
+    }
+  })
   app.use(errorHandler)
 
   server = app.listen(0)
@@ -127,17 +137,25 @@ describe('authentication middleware boundary', () => {
     })
   })
 
-  test('does not attach a principal when credentials are absent', async () => {
-    const response = await fetch(`${baseUrl}/principal`, {
+  test('allows public routes but rejects unauthenticated protected routes', async () => {
+    const publicResponse = await fetch(`${baseUrl}/csrf`, {
       headers: { 'X-Request-ID': 'auth-missing-test' },
     })
-    const body = await response.json()
+    const publicBody = await publicResponse.json()
 
-    expect(response.status).toBe(401)
-    expect(body).toEqual({
+    expect(publicResponse.status).toBe(200)
+    expect(publicBody).toEqual({ csrfToken: 'test-csrf-token' })
+
+    const protectedResponse = await fetch(`${baseUrl}/plans`, {
+      headers: { 'X-Request-ID': 'auth-protected-test' },
+    })
+    const protectedBody = await protectedResponse.json()
+
+    expect(protectedResponse.status).toBe(401)
+    expect(protectedBody).toEqual({
       error: 'unauthorized',
-      message: 'Missing Authorization header. Use: Authorization: Bearer <api_key>',
-      requestId: 'auth-missing-test',
+      message: 'An authenticated principal is required.',
+      requestId: 'auth-protected-test',
     })
   })
 })

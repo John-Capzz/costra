@@ -16,7 +16,7 @@ COSTRA handles economic decisions for autonomous agents. Treat it as financial i
 - The browser uses a PostgreSQL-backed opaque session in an HttpOnly cookie; API keys are never embedded in frontend bundles or environment variables.
 - Passwords are verified with Node's scrypt implementation and only the derived password verifier is stored.
 - Sessions expire after eight hours and logout revokes the server-side session.
-- State-changing browser requests require a double-submit CSRF token. API-key requests are not subject to cookie CSRF checks.
+- State-changing browser requests require a session-bound CSRF token sent in the `X-CSRF-Token` header. The token is generated at login, stored with the server-side browser session, returned in the login response, and kept only in frontend memory. API-key requests are not subject to browser-session CSRF checks.
 - Staging and production use Secure, SameSite=Lax cookies and an explicit credentialed CORS origin; wildcard credentialed CORS is rejected.
 
 ## Input Validation

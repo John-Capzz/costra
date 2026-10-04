@@ -18,11 +18,12 @@ export interface BrowserSessionRecord {
   name: string | null
   expiresAt: Date
   revokedAt: Date | null
+  csrfToken: string
 }
 
 export interface BrowserSessionStore {
   findSessionByTokenHash(tokenHash: string, now: Date): Promise<BrowserSessionRecord | null>
-  createSession(input: { userId: string; tokenHash: string; expiresAt: Date; userAgent?: string; ipAddress?: string }): Promise<{ id: string; expiresAt: Date }>
+  createSession(input: { userId: string; tokenHash: string; csrfToken: string; expiresAt: Date; userAgent?: string; ipAddress?: string }): Promise<{ id: string; expiresAt: Date }>
   revokeSession(sessionId: string, revokedAt: Date): Promise<void>
   findUserPassword(email: string): Promise<{ id: string; email: string; name: string | null; passwordHash: string | null } | null>
 }
@@ -33,6 +34,17 @@ export function hashSessionToken(token: string): string {
 
 export function createSessionToken(): string {
   return randomBytes(SESSION_BYTES).toString('base64url')
+}
+
+export function createCsrfToken(): string {
+  return randomBytes(SESSION_BYTES).toString('base64url')
+}
+
+export function csrfTokensMatch(expected: string, presented: string | null): boolean {
+  if (!presented) return false
+  const expectedHash = createHash('sha256').update(expected, 'utf8').digest()
+  const presentedHash = createHash('sha256').update(presented, 'utf8').digest()
+  return timingSafeEqual(expectedHash, presentedHash)
 }
 
 export async function hashPassword(password: string): Promise<string> {

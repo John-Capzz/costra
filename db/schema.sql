@@ -17,11 +17,12 @@ CREATE TABLE users (
 );
 
 -- ---- Browser Sessions ------------------------------------
--- Only a SHA-256 token hash is stored; the opaque cookie value is never persisted.
+-- The opaque session cookie and session-bound CSRF token are server-validated.
 CREATE TABLE browser_sessions (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash  TEXT NOT NULL UNIQUE,
+  csrf_token  TEXT NOT NULL,
   expires_at  TIMESTAMPTZ NOT NULL,
   revoked_at  TIMESTAMPTZ,
   user_agent  TEXT,

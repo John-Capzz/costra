@@ -6,7 +6,7 @@ declare global {
     interface Request {
       requestId: string
       principal?: AuthenticatedPrincipal
-      browserSession?: { sessionId: string; token: string }
+      browserSession?: { sessionId: string; token: string; csrfToken: string }
     }
   }
 }
