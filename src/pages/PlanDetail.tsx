@@ -25,6 +25,9 @@ export default function PlanDetail() {
   const navigate = useNavigate()
   const [plan, setPlan] = useState<CostPlanApiRecord | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [approving, setApproving] = useState(false)
+  const [creatingTask, setCreatingTask] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -34,6 +37,39 @@ export default function PlanDetail() {
       .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Plan could not be loaded.') })
     return () => { active = false }
   }, [id])
+
+  async function approvePlan() {
+    if (!id || !plan || plan.status !== 'draft') return
+    setApproving(true)
+    setActionError(null)
+    try {
+      setPlan(await costraApi.updatePlanStatus(id, 'approved'))
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'The plan could not be approved.')
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  async function createTaskFromPlan() {
+    if (!plan) return
+    setCreatingTask(true)
+    setActionError(null)
+    try {
+      const task = await costraApi.createTask({
+        description: plan.taskDescription,
+        agentId: plan.agentId,
+        planId: plan.id,
+        budget: plan.maxBudget,
+        estimated: plan.estimatedCost ?? '0.000000',
+      })
+      await navigate(`/tasks/${task.id}`)
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'The task could not be created.')
+    } finally {
+      setCreatingTask(false)
+    }
+  }
 
   if (!plan && !error) return <LoadingSpinner className="mx-auto my-24" />
   if (!plan) {
@@ -77,7 +113,21 @@ export default function PlanDetail() {
             Agent {plan.agentId} · Created {formatDate(plan.createdAt)}
           </p>
         </div>
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          {plan.status === 'draft' && (
+            <button type="button" onClick={() => { void approvePlan() }} disabled={approving} className="px-3 py-2 rounded-[var(--radius-md)] text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
+              {approving ? 'Approving...' : 'Approve'}
+            </button>
+          )}
+          {plan.status === 'approved' && (
+            <button type="button" onClick={() => { void createTaskFromPlan() }} disabled={creatingTask} className="px-3 py-2 rounded-[var(--radius-md)] text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
+              {creatingTask ? 'Creating...' : 'Create Task'}
+            </button>
+          )}
+        </div>
       </div>
+
+      {actionError && <p className="mb-5 text-[12px] text-[var(--danger)]" role="alert">{actionError}</p>}
 
       {/* Budget comparison */}
       <Card padding="md" className="mb-5">

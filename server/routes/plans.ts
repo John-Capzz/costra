@@ -9,7 +9,7 @@ import { persistEstimatedPlan } from '../services/plan-persistence'
 import { persistExactPlan } from '../services/phase3-plan-persistence'
 import { validateExactPlanBody, validateIdentifier, validatePlanBody } from '../validation'
 import { BudgetPlanningError } from '../../src/lib/budget-planning'
-import { NotFoundError, ValidationError } from '../errors'
+import { ConflictError, NotFoundError, ValidationError } from '../errors'
 
 function serializePlan(plan: CostPlanRecord, items: CostItemRecord[] = []) {
   return {
@@ -98,6 +98,25 @@ export function createPlansRouter(db?: DatabasePool) {
       res.status(201).json(serializePlan(persisted.plan, persisted.items))
     } catch (error) {
       next(error instanceof BudgetPlanningError ? new ValidationError(error.message) : asDatabaseUnavailable(error))
+    }
+  })
+  router.patch('/:id', async (req, res, next) => {
+    try {
+      const principal = requireAuthenticatedPrincipal(req.principal)
+      const id = validateIdentifier(req.params.id, 'id')
+      if (typeof req.body !== 'object' || req.body === null || Array.isArray(req.body) || req.body.status !== 'approved') {
+        throw new ValidationError('Only status: approved is supported.')
+      }
+      const repository = new PlanRepository(db ?? getDefaultDatabasePool())
+      const existing = await repository.findByIdForUser(id, principal.userId)
+      if (!existing) throw new NotFoundError('Plan not found.')
+      if (existing.status !== 'draft') throw new ConflictError('Only draft plans can be approved.')
+      const approved = await repository.approveForUser(id, principal.userId)
+      if (!approved) throw new ConflictError('The plan could not be approved.')
+      res.json(serializePlan(approved, await repository.listItemsForUser(id, principal.userId)))
+    } catch (error) {
+      console.error('PATCH plans error:', error)
+      next(asDatabaseUnavailable(error))
     }
   })
   router.get('/:id', async (req, res, next) => {

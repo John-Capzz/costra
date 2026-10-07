@@ -9,6 +9,8 @@
     "dev:server": "tsx watch server/index.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:seed-demo-user": "tsx scripts/seed-demo-user.ts",
+    "demo:setup": "tsx scripts/setup-demo-api-key.ts",
+    "demo:agent": "tsx scripts/demo-agent.ts",
     "lint:check": "oxlint src server sdk --quiet",
     "deploy:self": "bun run ./scripts/self-deploy.ts",
     "compass:deploy": "bun run ./scripts/compass-deploy.ts",

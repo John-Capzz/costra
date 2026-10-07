@@ -78,7 +78,7 @@ describe('Phase 2.1 migration foundation', () => {
       '0006_transactions_reconciliation',
       '0007_guarded_execution',
       '0008_rate_limit_buckets',
-      '0009_browser_auth', '0010_session_csrf_tokens',
+      '0009_browser_auth', '0010_session_csrf_tokens', '0011_agent_wallet_address',
     ])
   })
 
@@ -105,12 +105,12 @@ describe('Phase 2.1 migration foundation', () => {
       '0006_transactions_reconciliation',
       '0007_guarded_execution',
       '0008_rate_limit_buckets',
-      '0009_browser_auth', '0010_session_csrf_tokens',
+      '0009_browser_auth', '0010_session_csrf_tokens', '0011_agent_wallet_address',
     ])
     expect(second.applied).toEqual([])
-    expect(second.alreadyApplied).toHaveLength(10)
-    expect(database.began).toBe(10)
-    expect(database.committed).toBe(10)
+    expect(second.alreadyApplied).toHaveLength(11)
+    expect(database.began).toBe(11)
+    expect(database.committed).toBe(11)
     expect(database.rolledBack).toBe(0)
     expect(database.released).toBe(2)
   })

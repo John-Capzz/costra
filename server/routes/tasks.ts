@@ -64,7 +64,7 @@ export function createTasksRouter(db?: DatabasePool) {
       const principal = requireAuthenticatedPrincipal(req.principal)
       const taskId = validateIdentifier(req.params.id, 'id')
       const input = validateTaskEventBody(req.body)
-      const result = await recordTaskEvent(db ?? getDefaultDatabasePool(), { taskId, userId: principal.userId, event: { type: input.type, cost: input.cost ?? null, description: input.description ?? null, provider: input.provider ?? null, txHash: input.txHash ?? null, idempotencyKey: input.idempotencyKey ?? null, executionMode: 'simulated' } })
+      const result = await recordTaskEvent(db ?? getDefaultDatabasePool(), { taskId, userId: principal.userId, event: { type: input.type, cost: input.cost ?? null, description: input.description ?? null, provider: input.provider ?? null, txHash: input.txHash ?? null, metadata: input.metadata ?? null, idempotencyKey: input.idempotencyKey ?? null, executionMode: input.executionMode ?? 'simulated' } })
       res.status(result.duplicate ? 200 : 201).json(serializeEvent(result.event))
     } catch (error) { next(asDatabaseUnavailable(error)) }
   })

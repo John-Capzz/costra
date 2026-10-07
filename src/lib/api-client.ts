@@ -10,6 +10,27 @@ interface RawApiResponse {
   payload: unknown
 }
 
+interface BrowserXhr {
+  open(method: string, url: string, asynchronous: boolean): void
+  setRequestHeader(name: string, value: string): void
+  send(body: unknown): void
+  getResponseHeader(name: string): string | null
+  withCredentials: boolean
+  status: number
+  responseText: string
+  onload: (() => void) | null
+  onerror: (() => void) | null
+  ontimeout: (() => void) | null
+}
+
+interface BrowserXhrConstructor {
+  new(): BrowserXhr
+}
+
+function getBrowserXhrConstructor(): BrowserXhrConstructor | undefined {
+  return (globalThis as typeof globalThis & { XMLHttpRequest?: BrowserXhrConstructor }).XMLHttpRequest
+}
+
 export interface AuthUser { id: string; email: string | null; name: string | null }
 export interface AuthSessionResponse { user: AuthUser; expiresAt?: string; authMethod?: 'api_key' | 'browser_session'; csrfToken?: string }
 
@@ -231,6 +252,17 @@ export interface CreateTaskInput {
   planId?: string
 }
 
+export interface CreateTaskEventInput {
+  type: string
+  amount?: string
+  currency?: 'USDC'
+  description?: string
+  txHash?: string
+  metadata?: Record<string, unknown>
+  idempotencyKey?: string
+  executionMode?: 'simulated' | 'observed' | 'real'
+}
+
 export class CostraApiClient {
   private readonly baseUrl: string
   private readonly apiKey?: string
@@ -245,7 +277,7 @@ export class CostraApiClient {
     this.requestFetch = config.fetch ?? globalThis.fetch
     this.useXhr = config.fetch === undefined
       && Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV)
-      && typeof XMLHttpRequest !== 'undefined'
+      && getBrowserXhrConstructor() !== undefined
   }
 
   get plans(): Promise<{ plans: CostPlanApiRecord[]; total: number }> {
@@ -290,8 +322,19 @@ export class CostraApiClient {
     return this.post('/plans', input)
   }
 
+  updatePlanStatus(id: string, status: 'approved'): Promise<CostPlanApiRecord> {
+    return this.request<CostPlanApiRecord>(`/plans/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    })
+  }
+
   createTask(input: CreateTaskInput): Promise<TaskApiRecord> {
     return this.post('/tasks', input)
+  }
+
+  recordTaskEvent(taskId: string, input: CreateTaskEventInput): Promise<TaskEventApiRecord> {
+    return this.post(`/tasks/${encodeURIComponent(taskId)}/events`, input)
   }
 
   getPlan(id: string): Promise<CostPlanApiRecord> {
@@ -402,7 +445,17 @@ export class CostraApiClient {
 
   private requestWithXhr(url: string, init: RequestInit, headers: Headers): Promise<RawApiResponse> {
     return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
+      const Xhr = getBrowserXhrConstructor()
+      if (!Xhr) {
+        reject(new ApiClientError({
+          status: 0,
+          code: 'unavailable',
+          message: 'COSTRA API is unavailable.',
+          requestId: null,
+        }))
+        return
+      }
+      const xhr = new Xhr()
       xhr.open(init.method ?? 'GET', url, true)
       xhr.withCredentials = true
       headers.forEach((value, key) => xhr.setRequestHeader(key, value))
@@ -426,7 +479,7 @@ export class CostraApiClient {
         requestId: null,
       }))
       xhr.ontimeout = xhr.onerror
-      xhr.send(init.body === undefined ? null : init.body as XMLHttpRequestBodyInit)
+      xhr.send(init.body === undefined ? null : init.body)
     })
   }
 }

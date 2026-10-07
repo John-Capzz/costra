@@ -19,7 +19,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true
-    void costraApi.getCurrentUser().then((session) => {
+    void costraApi.getCurrentUser().then(async (session) => {
+      await costraApi.getCsrf()
       if (active) { setUser(session.user); setLoading(false) }
     }).catch((reason: unknown) => {
       if (!active) return

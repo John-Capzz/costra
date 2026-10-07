@@ -6,6 +6,7 @@ interface AgentRow extends QueryResultRow {
   user_id: string
   name: string
   description: string | null
+  wallet_address: string | null
   status: AgentRecord['status']
   spending_mode: AgentRecord['spendingMode']
   budget_limit: string
@@ -21,6 +22,7 @@ function mapAgent(row: AgentRow): AgentRecord {
     userId: row.user_id,
     name: row.name,
     description: row.description,
+    walletAddress: row.wallet_address,
     status: row.status,
     spendingMode: row.spending_mode,
     budgetLimit: row.budget_limit,
@@ -33,17 +35,20 @@ function mapAgent(row: AgentRow): AgentRecord {
 
 const agentColumns = `
   a.id, a.user_id, a.name, a.description, a.status, a.spending_mode,
+  a.wallet_address,
   a.budget_limit, a.planning_accuracy, a.total_spend, a.created_at, a.updated_at
 `
 
 const agentReturningColumns = `
   id, user_id, name, description, status, spending_mode,
+  wallet_address,
   budget_limit, planning_accuracy, total_spend, created_at, updated_at
 `
 
 export interface CreateAgentInput {
   name: string
   description?: string | null
+  walletAddress?: string | null
   status?: AgentRecord['status']
   spendingMode?: AgentRecord['spendingMode']
   budgetLimit?: string
@@ -70,10 +75,10 @@ export class AgentRepository {
 
   async createForUser(userId: string, input: CreateAgentInput): Promise<AgentRecord> {
     const result = await this.db.query<AgentRow>(
-      `INSERT INTO agents (user_id, name, description, status, spending_mode, budget_limit)
-       VALUES ($1, $2, $3, COALESCE($4, 'idle'), COALESCE($5, 'observe'), COALESCE($6::numeric, 50))
+      `INSERT INTO agents (user_id, name, description, wallet_address, status, spending_mode, budget_limit)
+       VALUES ($1, $2, $3, $4, COALESCE($5, 'idle'), COALESCE($6, 'observe'), COALESCE($7::numeric, 50))
        RETURNING ${agentReturningColumns}`,
-      [userId, input.name, input.description ?? null, input.status ?? null, input.spendingMode ?? null, input.budgetLimit ?? null],
+      [userId, input.name, input.description ?? null, input.walletAddress ?? null, input.status ?? null, input.spendingMode ?? null, input.budgetLimit ?? null],
     )
     return mapAgent(result.rows[0])
   }

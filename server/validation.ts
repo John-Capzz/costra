@@ -242,23 +242,38 @@ export function validateTaskBody(value: unknown): ValidatedTaskBody {
 export interface ValidatedTaskEventBody {
   type: string
   cost?: string
+  currency: 'USDC'
   description?: string
   provider?: string
   txHash?: string
+  metadata?: Record<string, unknown>
   idempotencyKey?: string
+  executionMode?: 'simulated' | 'observed' | 'real'
 }
 
 export function validateTaskEventBody(value: unknown): ValidatedTaskEventBody {
   const body = bodyRecord(value)
   const txHash = body.txHash === undefined ? undefined : validateTransactionHash(body.txHash)
+  const metadata = body.metadata === undefined ? undefined : (() => {
+    if (!isRecord(body.metadata)) throw new ValidationError('metadata must be a JSON object.')
+    return body.metadata
+  })()
+  const executionMode = body.executionMode === undefined
+    ? undefined
+    : enumValue(body.executionMode, 'executionMode', ['simulated', 'observed', 'real'] as const)
 
   return {
     type: enumValue(body.type, 'type', TASK_EVENT_TYPES),
-    cost: body.cost === undefined ? undefined : parseMoneyString(body.cost, 'cost'),
+    cost: body.cost === undefined && body.amount === undefined
+      ? undefined
+      : parseMoneyString(body.cost ?? body.amount, 'amount'),
+    currency: enumValue(body.currency ?? 'USDC', 'currency', SUPPORTED_CURRENCIES),
     description: optionalString(body.description, 'description', 2_000),
     provider: optionalString(body.provider, 'provider', 200),
     txHash,
+    metadata,
     idempotencyKey: optionalString(body.idempotencyKey, 'idempotencyKey', 128),
+    executionMode,
   }
 }
 

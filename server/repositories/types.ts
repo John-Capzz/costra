@@ -17,6 +17,7 @@ export interface AgentRecord {
   userId: string
   name: string
   description: string | null
+  walletAddress: string | null
   status: 'active' | 'idle' | 'paused' | 'error'
   spendingMode: 'observe' | 'guarded'
   budgetLimit: Money

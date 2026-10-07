@@ -141,6 +141,20 @@ export class PlanRepository {
     return result.rows[0] ? mapPlan(result.rows[0]) : null
   }
 
+  async approveForUser(planId: string, userId: string): Promise<CostPlanRecord | null> {
+    const result = await this.db.query<PlanRow>(
+      `UPDATE cost_plans AS p
+          SET status = 'approved', updated_at = NOW()
+         FROM agents AS a
+        WHERE p.id = $1 AND a.id = p.agent_id AND a.user_id = $2 AND p.status = 'draft'
+      RETURNING p.id, p.agent_id, p.task_description, p.network, p.currency, p.max_budget,
+                p.estimated_cost, p.safety_buffer, p.recommended_budget, p.confidence,
+                p.status, p.created_at, p.updated_at`,
+      [planId, userId],
+    )
+    return result.rows[0] ? mapPlan(result.rows[0]) : null
+  }
+
   async listItemsForUser(planId: string, userId: string): Promise<CostItemRecord[]> {
     const result = await this.db.query<CostItemRow>(
       `SELECT ci.id, ci.plan_id, ci.type, ci.label, ci.provider_id,

@@ -63,6 +63,7 @@ CREATE TABLE agents (
   user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name               TEXT NOT NULL,
   description        TEXT,
+  wallet_address     TEXT CHECK (wallet_address IS NULL OR wallet_address ~ '^0x[0-9a-fA-F]{40}$'),
   status             TEXT NOT NULL DEFAULT 'idle'
                      CHECK (status IN ('active','idle','paused','error')),
   spending_mode      TEXT NOT NULL DEFAULT 'observe'
