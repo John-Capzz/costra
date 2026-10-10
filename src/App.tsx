@@ -22,6 +22,7 @@ import Spending    from '@/pages/Spending'
 import Analytics   from '@/pages/Analytics'
 import Developer   from '@/pages/Developer'
 import Settings    from '@/pages/Settings'
+import PublicTask  from '@/pages/PublicTask'
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -60,6 +61,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/demo" element={<PublicTask />} />
         <Route path="*" element={loading ? <div className="min-h-screen" style={{ background: 'var(--bg)' }} /> : user ? <AppShell><Routes>
           <Route path="/"               element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"      element={<Dashboard />} />

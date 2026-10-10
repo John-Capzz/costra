@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.scripts.tsbuildinfo"
+  },
+  "include": ["scripts/demo-agent.ts", "scripts/setup-demo-api-key.ts", "server", "src/types", "src/lib"]
+}

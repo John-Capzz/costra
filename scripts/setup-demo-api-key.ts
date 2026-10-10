@@ -1,7 +1,7 @@
 import { createDatabasePool } from '../server/db/pool'
 import { createApiKeyInput, PostgresApiKeyManagementStore } from '../server/auth/api-key-management'
 
-const DEMO_USER_ID = '295bca72-2658-4c8f-b4dc-6508447a1f58'
+const DEMO_USER_ID = process.env.DEMO_USER_ID?.trim() || '295bca72-2658-4c8f-b4dc-6508447a1f58'
 
 async function main(): Promise<void> {
   const pool = createDatabasePool()

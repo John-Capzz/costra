@@ -15,6 +15,7 @@ interface TaskRow extends QueryResultRow {
   current_spend: string
   reserved_spend: string
   spending_mode: TaskRecord['spendingMode']
+  result: string | null
   idempotency_key: string | null
   created_at: Date
   updated_at: Date
@@ -35,6 +36,7 @@ function mapTask(row: TaskRow): TaskRecord {
     currentSpend: row.current_spend,
     reservedSpend: row.reserved_spend,
     spendingMode: row.spending_mode,
+    result: row.result,
     idempotencyKey: row.idempotency_key,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -43,13 +45,13 @@ function mapTask(row: TaskRow): TaskRecord {
 
 const taskColumns = `
   t.id, t.agent_id, t.plan_id, t.description, t.network, t.currency,
-  t.status, t.budget, t.estimated, t.current_spend, t.reserved_spend, t.spending_mode,
+  t.status, t.budget, t.estimated, t.current_spend, t.reserved_spend, t.spending_mode, t.result,
   t.idempotency_key, t.lifecycle_status, t.created_at, t.updated_at
 `
 
 const taskReturningColumns = `
   id, agent_id, plan_id, description, network, currency,
-  status, budget, estimated, current_spend, reserved_spend, spending_mode,
+  status, budget, estimated, current_spend, reserved_spend, spending_mode, result,
   idempotency_key, lifecycle_status, created_at, updated_at
 `
 
@@ -152,6 +154,18 @@ export class TaskRepository {
           )
        RETURNING ${taskReturningColumns}`,
       [taskId, userId, cost],
+    )
+    return result.rows[0] ? mapTask(result.rows[0]) : null
+  }
+
+  async updateResultForUser(taskId: string, userId: string, resultText: string): Promise<TaskRecord | null> {
+    const result = await this.db.query<TaskRow>(
+      `UPDATE tasks AS t
+          SET result = $3, updated_at = NOW()
+        WHERE t.id = $1
+          AND EXISTS (SELECT 1 FROM agents AS a WHERE a.id = t.agent_id AND a.user_id = $2)
+       RETURNING ${taskReturningColumns}`,
+      [taskId, userId, resultText],
     )
     return result.rows[0] ? mapTask(result.rows[0]) : null
   }

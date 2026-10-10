@@ -80,6 +80,7 @@ export interface TaskRecord {
   currentSpend: Money
   reservedSpend: Money
   spendingMode: 'observe' | 'guarded'
+  result: string | null
   idempotencyKey: string | null
   createdAt: Date
   updatedAt: Date

@@ -17,6 +17,7 @@ import { getDefaultDatabasePool } from './db/pool'
 import { UnavailableError } from './errors'
 import { MetricsRegistry, observabilityMiddleware } from './observability'
 import { createAuthRouter } from './routes/auth'
+import { createPublicDemoRouter } from './routes/public-demo'
 import { csrfProtection } from './middleware/csrf'
 import { createPostgresBrowserSessionStore } from './auth/postgres-browser-store'
 import type { RequestHandler } from 'express'
@@ -56,6 +57,7 @@ export function createApp(options: AppOptions = {}) {
 
   const auth = options.auth ?? authMiddleware
   app.use('/api/v1/auth', createAuthRouter(auth, options.browserSessionStore ?? createPostgresBrowserSessionStore({ pool: options.db })))
+  app.use('/api/v1/public', createPublicDemoRouter(options.db))
 
   const v1 = express.Router()
   v1.use(auth)

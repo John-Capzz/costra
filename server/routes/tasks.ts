@@ -10,7 +10,7 @@ import type { DatabasePool, ExecutionEventRecord, TaskRecord } from '../reposito
 import { persistReconciliation } from '../services/reconciliation'
 import { recordTaskEvent } from '../services/task-events'
 import { validateIdentifier, validateTaskBody, validateTaskEventBody } from '../validation'
-import { NotFoundError } from '../errors'
+import { NotFoundError, ValidationError } from '../errors'
 
 function serializeTask(task: TaskRecord) {
   return { ...task, budget: task.budget, estimated: task.estimated, currentSpend: task.currentSpend }
@@ -66,6 +66,18 @@ export function createTasksRouter(db?: DatabasePool) {
       const input = validateTaskEventBody(req.body)
       const result = await recordTaskEvent(db ?? getDefaultDatabasePool(), { taskId, userId: principal.userId, event: { type: input.type, cost: input.cost ?? null, description: input.description ?? null, provider: input.provider ?? null, txHash: input.txHash ?? null, metadata: input.metadata ?? null, idempotencyKey: input.idempotencyKey ?? null, executionMode: input.executionMode ?? 'simulated' } })
       res.status(result.duplicate ? 200 : 201).json(serializeEvent(result.event))
+    } catch (error) { next(asDatabaseUnavailable(error)) }
+  })
+  router.patch('/:id/result', async (req, res, next) => {
+    try {
+      const principal = requireAuthenticatedPrincipal(req.principal)
+      const taskId = validateIdentifier(req.params.id, 'id')
+      if (typeof req.body?.result !== 'string' || req.body.result.trim().length === 0 || req.body.result.length > 200_000) {
+        throw new ValidationError('result must be a non-empty string of 200000 characters or fewer.')
+      }
+      const task = await new TaskRepository(db ?? getDefaultDatabasePool()).updateResultForUser(taskId, principal.userId, req.body.result)
+      if (!task) throw new NotFoundError('Task not found.')
+      res.json(serializeTask(task))
     } catch (error) { next(asDatabaseUnavailable(error)) }
   })
   router.post('/:id/reconcile', async (req, res, next) => {

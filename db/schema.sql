@@ -150,6 +150,7 @@ CREATE TABLE tasks (
                  CHECK (reserved_spend >= 0),
   spending_mode  TEXT NOT NULL DEFAULT 'observe'
                  CHECK (spending_mode IN ('observe','guarded')),
+  result         TEXT,
   idempotency_key TEXT,  -- replay protection
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()

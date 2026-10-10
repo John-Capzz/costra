@@ -74,7 +74,7 @@ integration('Phase 2 real PostgreSQL integration', () => {
     const migrations = await pool.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version')
     expect(migrations.rows.map((row) => row.version)).toEqual([
       '0001_baseline', '0002_domain_constraints', '0003_ownership_indexes',
-      '0004_idempotency_constraints', '0005_task_lifecycle', '0006_transactions_reconciliation', '0007_guarded_execution', '0008_rate_limit_buckets', '0009_browser_auth', '0010_session_csrf_tokens', '0011_agent_wallet_address',
+      '0004_idempotency_constraints', '0005_task_lifecycle', '0006_transactions_reconciliation', '0007_guarded_execution', '0008_rate_limit_buckets', '0009_browser_auth', '0010_session_csrf_tokens', '0011_agent_wallet_address', '0012_task_results',
     ])
     const foreignKeys = await pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM information_schema.table_constraints WHERE constraint_type = 'FOREIGN KEY'`)
     expect(Number(foreignKeys.rows[0].count)).toBeGreaterThanOrEqual(10)

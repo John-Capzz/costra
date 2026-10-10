@@ -72,7 +72,7 @@ export function getApiClientRuntimeConfig(
     env?: Record<string, string | undefined>
   }).env ?? {},
 ): ApiClientRuntimeConfig {
-  const configuredBaseUrl = environment.VITE_COSTRA_API_BASE_URL
+  const configuredBaseUrl = environment.VITE_API_BASE_URL
   return { baseUrl: trimBaseUrl(configuredBaseUrl || DEFAULT_API_BASE_URL) }
 }
 
@@ -150,6 +150,7 @@ export interface TaskApiRecord {
   currentSpend: ApiMoney
   reservedSpend?: ApiMoney
   spendingMode: 'observe' | 'guarded'
+  result: string | null
   idempotencyKey: string | null
   createdAt: string
   updatedAt: string
@@ -335,6 +336,24 @@ export class CostraApiClient {
 
   recordTaskEvent(taskId: string, input: CreateTaskEventInput): Promise<TaskEventApiRecord> {
     return this.post(`/tasks/${encodeURIComponent(taskId)}/events`, input)
+  }
+
+  updateTaskResult(taskId: string, result: string): Promise<TaskApiRecord> {
+    return this.request<TaskApiRecord>(`/tasks/${encodeURIComponent(taskId)}/result`, {
+      method: 'PATCH',
+      body: JSON.stringify({ result }),
+    })
+  }
+
+  createPublicTask(description: string): Promise<TaskApiRecord> {
+    return this.request<TaskApiRecord>('/public/tasks', {
+      method: 'POST',
+      body: JSON.stringify({ description }),
+    })
+  }
+
+  getPublicTask(id: string): Promise<TaskApiRecord> {
+    return this.get(`/public/tasks/${encodeURIComponent(id)}`)
   }
 
   getPlan(id: string): Promise<CostPlanApiRecord> {
