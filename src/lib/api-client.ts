@@ -61,7 +61,10 @@ export interface ApiClientRuntimeConfig {
 
 export type ApiMoney = string
 
-const DEFAULT_API_BASE_URL = '/api/v1'
+const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  ?? (typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+    ? 'https://costra-api.onrender.com/api/v1'
+    : '/api/v1')
 
 function trimBaseUrl(value: string): string {
   return value.trim().replace(/\/$/, '')
